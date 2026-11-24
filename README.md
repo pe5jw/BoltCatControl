@@ -1,6 +1,6 @@
 # BoltCatControl
 
-**Moderne CAT control voor je transceiver — vervanger voor DXLab Commander**
+**Moderne CAT control voor je transceiver 
 
 BoltCatControl draait op de pc die direct aan de radio hangt. De app start zelf een lokale
 [Hamlib](https://hamlib.github.io/) `rigctld` op de COM/USB-poort en praat daar via TCP mee.
