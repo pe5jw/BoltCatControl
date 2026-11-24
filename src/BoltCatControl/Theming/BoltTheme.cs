@@ -15,26 +15,6 @@ public sealed record BoltTheme(
     string Rx, string Tx, string Green,
     string Text, string TextDim, string Border)
 {
-    public static readonly BoltTheme Amber = new("Amber",
-        BgDeep: "#0a0c10", BgPanel: "#13171e", BgControl: "#1c2028", BgInput: "#22272f",
-        Accent: "#f5c400", AccentDim: "#7a6200",
-        Rx: "#00c8ff", Tx: "#ff4444", Green: "#22dd66",
-        Text: "#e8ecf4", TextDim: "#8a95a8", Border: "#323848");
-
-    public static readonly BoltTheme Cyan = new("Cyan",
-        BgDeep: "#080c10", BgPanel: "#0f1520", BgControl: "#131c28", BgInput: "#182030",
-        Accent: "#00e5ff", AccentDim: "#006070",
-        Rx: "#00e5ff", Tx: "#ff4444", Green: "#22dd66",
-        Text: "#ddf0ff", TextDim: "#6090a8", Border: "#1e3040");
-
-    public static readonly BoltTheme Green = new("Green",
-        BgDeep: "#030a03", BgPanel: "#081008", BgControl: "#0c180c", BgInput: "#101e10",
-        Accent: "#00ff44", AccentDim: "#006622",
-        Rx: "#00ff44", Tx: "#ff4444", Green: "#00ff44",
-        Text: "#c0f0c0", TextDim: "#508050", Border: "#1a3020");
-
-    public static readonly IReadOnlyList<BoltTheme> All = [Amber, Cyan, Green];
-
     /// <summary>Resource-sleutels, zelfde namen als de BoltSDR CSS variabelen.</summary>
     public static class Keys
     {
@@ -74,4 +54,28 @@ public sealed record BoltTheme(
         Set("ComboBoxForeground", Text);
         Set("ComboBoxDropDownBackground", BgPanel);
     }
+}
+
+/// <summary>De BoltSDR thema-presets.</summary>
+public static class BoltThemes
+{
+    public static readonly BoltTheme Amber = new("Amber",
+        BgDeep: "#0a0c10", BgPanel: "#13171e", BgControl: "#1c2028", BgInput: "#22272f",
+        Accent: "#f5c400", AccentDim: "#7a6200",
+        Rx: "#00c8ff", Tx: "#ff4444", Green: "#22dd66",
+        Text: "#e8ecf4", TextDim: "#8a95a8", Border: "#323848");
+
+    public static readonly BoltTheme Cyan = new("Cyan",
+        BgDeep: "#080c10", BgPanel: "#0f1520", BgControl: "#131c28", BgInput: "#182030",
+        Accent: "#00e5ff", AccentDim: "#006070",
+        Rx: "#00e5ff", Tx: "#ff4444", Green: "#22dd66",
+        Text: "#ddf0ff", TextDim: "#6090a8", Border: "#1e3040");
+
+    public static readonly BoltTheme Green = new("Green",
+        BgDeep: "#030a03", BgPanel: "#081008", BgControl: "#0c180c", BgInput: "#101e10",
+        Accent: "#00ff44", AccentDim: "#006622",
+        Rx: "#00ff44", Tx: "#ff4444", Green: "#00ff44",
+        Text: "#c0f0c0", TextDim: "#508050", Border: "#1a3020");
+
+    public static readonly IReadOnlyList<BoltTheme> All = [Amber, Cyan, Green];
 }

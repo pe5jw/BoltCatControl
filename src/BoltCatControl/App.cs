@@ -13,7 +13,7 @@ public sealed class App : Application
     {
         Styles.Add(new FluentTheme());
         RequestedThemeVariant = ThemeVariant.Dark;
-        BoltTheme.Amber.Apply(this);
+        BoltThemes.Amber.Apply(this);
     }
 
     public override void OnFrameworkInitializationCompleted()

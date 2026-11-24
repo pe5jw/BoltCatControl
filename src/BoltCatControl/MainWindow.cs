@@ -70,7 +70,7 @@ public sealed class MainWindow : Window
 
         var themePicker = new ComboBox
         {
-            ItemsSource = BoltTheme.All.Select(t => t.Name).ToList(),
+            ItemsSource = BoltThemes.All.Select(t => t.Name).ToList(),
             SelectedIndex = 0,
             MinWidth = 100,
             VerticalAlignment = VerticalAlignment.Center,
@@ -78,7 +78,7 @@ public sealed class MainWindow : Window
         themePicker.SelectionChanged += (_, _) =>
         {
             if (themePicker.SelectedIndex >= 0 && Application.Current is { } app)
-                BoltTheme.All[themePicker.SelectedIndex].Apply(app);
+                BoltThemes.All[themePicker.SelectedIndex].Apply(app);
         };
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto") };
