@@ -32,6 +32,8 @@ BoltCatControl.slnx
 src/
   BoltCat.Core/      CAT logica zonder UI (rigctld client, state, poller)
   BoltCatControl/    Avalonia desktop app
+tests/
+  BoltCat.Core.Tests/  tests met een nep-rigctld (draaien in GitHub Actions)
 ```
 
 ## Bouwen
@@ -61,7 +63,7 @@ git push origin v0.1.0
 ## Roadmap (MVP)
 
 - [x] Project setup
-- [ ] `BoltCat.Core` — `RigctldClient`, `RigState`, `RigPoller`
+- [x] `BoltCat.Core` — `RigctldClient`, `RigState`, `RigPoller`
 - [ ] rigctld auto-start (meegeleverde binary Windows + Linux)
 - [ ] MVP GUI — VFO A/B, mode, PTT, A↔B / A→B / Split, band, S-meter, status
 - [ ] JSON configuratie — COM poort, baud, Hamlib rig model, MIDI
