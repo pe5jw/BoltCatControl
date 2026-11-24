@@ -1,0 +1,12 @@
+# Line endings normaliseren (LF in de repo, native bij checkout)
+* text=auto
+
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf
+
+# Binaries (meegeleverde rigctld)
+*.exe  binary
+*.dll  binary
+*.so   binary

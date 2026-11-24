@@ -1,0 +1,15 @@
+<Project>
+  <!-- Gedeelde instellingen voor alle projecten in de solution -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- Versie: lokaal 0.1.0-dev, in CI overschreven met de git tag (v0.1.0 → 0.1.0) -->
+    <Version>0.1.0-dev</Version>
+    <Authors>PE5JW</Authors>
+    <Product>BoltCatControl</Product>
+    <Copyright>PE5JW</Copyright>
+  </PropertyGroup>
+</Project>

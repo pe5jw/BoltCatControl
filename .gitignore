@@ -1,0 +1,27 @@
+# Build output
+bin/
+obj/
+out/
+dist/
+artifacts/
+
+# User-specific files
+*.user
+*.suo
+.vs/
+.vscode/
+.idea/
+
+# Release archives
+BoltCatControl-v*.zip
+
+# NuGet packages
+*.nupkg
+packages/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log

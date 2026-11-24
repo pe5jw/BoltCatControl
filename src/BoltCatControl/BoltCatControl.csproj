@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- WinExe: geen console venster op Windows; op Linux gewoon een executable -->
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>BoltCatControl</RootNamespace>
+    <AssemblyName>BoltCatControl</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Puur C#, geen .axaml bestanden -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Avalonia UI (cross-platform GUI) — zelfde versie als RadioBridge -->
+    <PackageReference Include="Avalonia"               Version="11.2.5" />
+    <PackageReference Include="Avalonia.Desktop"       Version="11.2.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter"   Version="11.2.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BoltCat.Core\BoltCat.Core.csproj" />
+  </ItemGroup>
+</Project>

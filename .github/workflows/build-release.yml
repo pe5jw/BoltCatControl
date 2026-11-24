@@ -1,0 +1,96 @@
+name: Build & release
+
+# Elke push naar main: bouwen voor Windows x64 en Linux x64.
+# Tag v* (bijv. v0.1.0): ook een GitHub release met de zips.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+permissions:
+  contents: write           # nodig om release-assets te uploaden
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Eigen installatiemap: niet mengen met een voorgeïnstalleerde nieuwere SDK
+      - uses: actions/setup-dotnet@v4
+        id: dotnet
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: SDK vastzetten op .NET 10
+        shell: bash
+        run: dotnet new globaljson --sdk-version ${{ steps.dotnet.outputs.dotnet-version }} --force
+
+      - name: Versie bepalen
+        id: ver
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.1.0-ci.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: dotnet build BoltCatControl.slnx -c Release
+
+      - name: Publish ${{ matrix.rid }}
+        run: >
+          dotnet publish src/BoltCatControl -r ${{ matrix.rid }} --self-contained
+          -c Release -o out/BoltCatControl
+          /p:Version=${{ steps.ver.outputs.version }}
+
+      - name: Zippen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path out/BoltCatControl -DestinationPath "BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
+
+      - name: Zippen (Linux, met execute-bit)
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x out/BoltCatControl/BoltCatControl
+          cd out && zip -qr "../BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCatControl
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.rid }}
+          path: BoltCatControl-*.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: GitHub release ${{ github.ref_name }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                 --title "BoltCatControl $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber BoltCatControl-*.zip

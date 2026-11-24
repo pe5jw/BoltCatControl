@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    BoltCat.Core — CAT logica zonder UI:
+      RigctldClient  TCP client naar lokale rigctld (:4532)
+      RigState       huidige toestand van de radio (VFO A/B, mode, PTT, S-meter)
+      RigPoller      periodiek uitlezen van de radio
+      RigctldProcess rigctld starten/stoppen (meegeleverde binary)
+  -->
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <RootNamespace>BoltCat.Core</RootNamespace>
+    <AssemblyName>BoltCat.Core</AssemblyName>
+  </PropertyGroup>
+</Project>
