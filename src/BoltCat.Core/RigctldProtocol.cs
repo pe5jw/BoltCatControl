@@ -12,6 +12,8 @@ public enum VfoOp
     Swap,
     /// <summary>A→B — VFO A naar B kopiëren (CPY).</summary>
     CopyAtoB,
+    /// <summary>Actieve VFO wisselen A/B (TOGGLE) — o.a. FT-817/857/897 die geen XCHG/CPY kennen.</summary>
+    Toggle,
 }
 
 /// <summary>
@@ -83,6 +85,7 @@ public static class RigctldProtocol
     {
         VfoOp.Swap     => "XCHG",
         VfoOp.CopyAtoB => "CPY",
+        VfoOp.Toggle   => "TOGGLE",
         _ => throw new ArgumentOutOfRangeException(nameof(op)),
     };
 

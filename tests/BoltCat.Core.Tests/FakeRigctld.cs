@@ -117,6 +117,7 @@ internal sealed class FakeRigctld : IAsyncDisposable
             case "vfo_op":
                 if (p[^1] == "XCHG") (FreqA, FreqB) = (FreqB, FreqA);
                 else if (p[^1] == "CPY") FreqB = FreqA;
+                else if (p[^1] == "TOGGLE") (FreqA, FreqB) = (FreqB, FreqA);
                 else return "vfo_op:\nRPRT -1\n";
                 return Ok($"vfo_op: {p[^1]}");
             case "get_vfo":

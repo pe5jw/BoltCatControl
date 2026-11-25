@@ -34,7 +34,23 @@ src/
   BoltCatControl/    Avalonia desktop app
 tests/
   BoltCat.Core.Tests/  tests met een nep-rigctld (draaien in GitHub Actions)
+tools/
+  BoltCat.Test/        console testprogramma voor een echte radio
 ```
+
+## Testen met een radio
+
+`BoltCat.Test` zit als losse exe in de build-zips (`BoltCat.Test-…-win-x64.zip`).
+Start eerst zelf `rigctld` (zit in de Hamlib Windows-zip, map `bin`):
+
+```
+rigctl -l | findstr 897                 modelnummer van je radio opzoeken
+rigctld -m <model> -r COM3 -s 4800      FT-897D: baudrate zoals ingesteld in menu CAT RATE
+BoltCat.Test
+```
+
+Je ziet live frequentie, mode, PTT en S-meter. Typ `help` voor de commando's
+(`f 7.074`, `m LSB`, `tx`, `rx`, `toggle`, `split on`, `raw …`).
 
 ## Bouwen
 

@@ -62,6 +62,9 @@ public class RigctldClientTests
 
         await client.VfoOpAsync(VfoOp.CopyAtoB);
         Assert.Equal(fake.FreqA, fake.FreqB);
+
+        await client.VfoOpAsync(VfoOp.Toggle);
+        Assert.Contains(@"+\vfo_op TOGGLE", fake.Received);
     }
 
     [Fact]

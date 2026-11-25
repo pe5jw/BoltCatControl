@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Console testprogramma: BoltCat.Core tegen een echte rigctld + radio testen -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>BoltCat.Test</RootNamespace>
+    <AssemblyName>BoltCat.Test</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BoltCat.Core\BoltCat.Core.csproj" />
+  </ItemGroup>
+</Project>
