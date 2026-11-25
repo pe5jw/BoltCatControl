@@ -18,6 +18,8 @@ public sealed class RigPoller : IAsyncDisposable
     private Task? _loop;
     private bool _strengthSupported = true;
     private bool _splitSupported = true;
+    private bool _strengthFailing;
+    private bool _splitFailing;
     private long _cycle;
 
     public RigPoller(RigctldClient client) => _client = client;
@@ -34,6 +36,9 @@ public sealed class RigPoller : IAsyncDisposable
     public RigState State { get; private set; } = RigState.Disconnected();
 
     public event Action<RigState>? StateChanged;
+
+    /// <summary>Diagnostische meldingen, bijv. "S-meter niet ondersteund" of een tijdelijke CAT fout.</summary>
+    public event Action<string>? Notice;
 
     public bool IsRunning => _loop is { IsCompleted: false };
 
@@ -79,6 +84,8 @@ public sealed class RigPoller : IAsyncDisposable
                     await _client.ConnectAsync(ct).ConfigureAwait(false);
                     _strengthSupported = true;
                     _splitSupported = true;
+                    _strengthFailing = false;
+                    _splitFailing = false;
                     _cycle = 0;
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
@@ -120,8 +127,24 @@ public sealed class RigPoller : IAsyncDisposable
         int? strength = null;
         if (_strengthSupported)
         {
-            try { strength = await _client.GetStrengthAsync(ct).ConfigureAwait(false); }
-            catch (RigctldException) { _strengthSupported = false; }
+            try
+            {
+                strength = await _client.GetStrengthAsync(ct).ConfigureAwait(false);
+                if (_strengthFailing) Notice?.Invoke("S-meter werkt weer");
+                _strengthFailing = false;
+            }
+            catch (RigctldException ex) when (IsUnsupported(ex))
+            {
+                _strengthSupported = false;
+                Notice?.Invoke($"S-meter niet ondersteund door deze radio ({ex.Message}) — wordt niet meer gevraagd");
+            }
+            catch (RigctldException ex)
+            {
+                // Tijdelijke fout (bijv. timeout naar de radio): vorige waarde houden, volgende ronde opnieuw
+                strength = prev.StrengthDb;
+                if (!_strengthFailing) Notice?.Invoke($"S-meter lezen mislukt, probeer opnieuw: {ex.Message}");
+                _strengthFailing = true;
+            }
         }
 
         bool split = prev.Split;
@@ -131,8 +154,22 @@ public sealed class RigPoller : IAsyncDisposable
         {
             if (_splitSupported)
             {
-                try { (split, txVfo) = await _client.GetSplitAsync(ct).ConfigureAwait(false); }
-                catch (RigctldException) { _splitSupported = false; split = false; }
+                try
+                {
+                    (split, txVfo) = await _client.GetSplitAsync(ct).ConfigureAwait(false);
+                    _splitFailing = false;
+                }
+                catch (RigctldException ex) when (IsUnsupported(ex))
+                {
+                    _splitSupported = false;
+                    split = false;
+                    Notice?.Invoke($"Split uitlezen niet ondersteund door deze radio ({ex.Message}) — wordt niet meer gevraagd");
+                }
+                catch (RigctldException ex)
+                {
+                    if (!_splitFailing) Notice?.Invoke($"Split lezen mislukt, probeer opnieuw: {ex.Message}");
+                    _splitFailing = true;
+                }
             }
             if (_client.VfoMode)
             {
@@ -154,6 +191,13 @@ public sealed class RigPoller : IAsyncDisposable
             StrengthDb = strength,
         };
     }
+
+    /// <summary>
+    /// Alleen deze Hamlib codes betekenen "kan deze radio niet": niet geïmplementeerd (-4),
+    /// niet beschikbaar (-11) of ongeldige parameter (-1). Andere fouten (timeout -5, I/O -6,
+    /// protocol -8) zijn tijdelijk en worden de volgende ronde opnieuw geprobeerd.
+    /// </summary>
+    internal static bool IsUnsupported(RigctldException ex) => ex.Code is -4 or -11 or -1;
 
     private void Publish(RigState state)
     {

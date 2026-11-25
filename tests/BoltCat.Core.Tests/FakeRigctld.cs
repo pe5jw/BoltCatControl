@@ -27,6 +27,9 @@ internal sealed class FakeRigctld : IAsyncDisposable
     public string TxVfo = "VFOA";
     public bool StrengthSupported = true;
 
+    /// <summary>Foutcode voor get_level (0 = OK), bijv. -5 om een tijdelijke radio-timeout te simuleren.</summary>
+    public volatile int StrengthCode;
+
     /// <summary>Commando's waar niet op geantwoord wordt (timeout simuleren).</summary>
     public readonly ConcurrentDictionary<string, bool> Mute = new();
 
@@ -105,6 +108,7 @@ internal sealed class FakeRigctld : IAsyncDisposable
                 Ptt = p[^1] != "0";
                 return Ok($"set_ptt: {p[^1]}");
             case "get_level":
+                if (StrengthCode != 0) return $"get_level: STRENGTH\nRPRT {StrengthCode}\n";
                 return StrengthSupported
                     ? $"get_level: STRENGTH\n{Strength}\nRPRT 0\n"
                     : "get_level: STRENGTH\nRPRT -11\n";

@@ -75,6 +75,29 @@ public class RigPollerTests
     }
 
     [Fact]
+    public async Task Tijdelijke_s_meter_fout_zet_s_meter_niet_uit()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        var notices = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        poller.Notice += notices.Enqueue;
+        poller.Start();
+        await WaitFor(poller, s => s.StrengthDb == -12);
+
+        fake.StrengthCode = -5;                 // radio reageert even niet
+        await Task.Delay(200);
+        Assert.Equal(-12, poller.State.StrengthDb); // vorige waarde blijft staan
+        Assert.True(poller.State.Connected);
+        Assert.Contains(notices, n => n.Contains("probeer opnieuw"));
+
+        fake.StrengthCode = 0;
+        fake.Strength = 10;
+        var s = await WaitFor(poller, s => s.StrengthDb == 10);
+        Assert.True(s.Connected);
+    }
+
+    [Fact]
     public async Task Verbindt_opnieuw_na_wegvallen()
     {
         await using var fake = new FakeRigctld();

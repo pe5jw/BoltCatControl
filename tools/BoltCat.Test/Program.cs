@@ -46,6 +46,7 @@ await using var client = new RigctldClient(host, port, vfoMode);
 await using var poller = new RigPoller(client);
 
 poller.StateChanged += s => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {Format(s)}");
+poller.Notice       += n => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ! {n}");
 poller.Start();
 
 while (true)
@@ -152,5 +153,6 @@ static string Format(RigState s)
     var b = s.FrequencyB is { } hzB ? $"  B {hzB / 1_000_000.0:0.000000}" : "";
     var meter = s.StrengthDb is { } db ? $"{SMeter.Format(db),-6} ({db,4} dB)" : "S-meter n.v.t.";
     var split = s.Split ? $"  SPLIT (TX {s.TxVfo})" : "";
-    return $"{f}{b}  {s.Mode,-6} {s.Passband,5} Hz  {(s.Ptt ? "TX" : "RX")}  {meter}{split}";
+    var pb = s.Passband is > 0 ? $"{s.Passband,5} Hz" : "        "; // 0 = standaardfilter van de radio
+    return $"{f}{b}  {s.Mode,-6} {pb}  {(s.Ptt ? "TX" : "RX")}  {meter}{split}";
 }
