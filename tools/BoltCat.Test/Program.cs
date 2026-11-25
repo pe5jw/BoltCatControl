@@ -1,42 +1,138 @@
 using System.Globalization;
 using BoltCat.Core;
 
-// BoltCat.Test — BoltCat.Core testen tegen een echte rigctld + radio.
+// BoltCat.Test — BoltCat.Core testen tegen een echte radio.
 //
-//   1. start rigctld:   rigctld -m <model> -r COM3 -s 4800
-//   2. start dit:       BoltCat.Test [--host 127.0.0.1] [--port 4532] [--vfo]
+//   BoltCat.Test --rig ft-897d --com COM3 --baud 4800    start zelf rigctld (meegeleverd)
+//   BoltCat.Test                                         verbind met een rigctld die al draait
+//   BoltCat.Test --list 897                              modellen zoeken
 //
 // Toont live wat de radio doet en accepteert commando's (typ 'help').
 
 string host = "127.0.0.1";
 int port = RigctldProtocol.DefaultPort;
 bool vfoMode = false;
+string? rig = null, com = null, rigctldPath = null, listQuery = null;
+int? baud = null;
+bool list = false;
 
 for (int i = 0; i < args.Length; i++)
 {
-    switch (args[i].ToLowerInvariant())
+    string Next() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{args[i]} verwacht een waarde");
+    try
     {
-        case "--host" when i + 1 < args.Length: host = args[++i]; break;
-        case "--port" when i + 1 < args.Length: port = int.Parse(args[++i], CultureInfo.InvariantCulture); break;
-        case "--vfo": vfoMode = true; break;
-        case "--help" or "-h" or "/?":
-            Console.WriteLine("""
-                BoltCat.Test — CAT test via een lokale rigctld
+        switch (args[i].ToLowerInvariant())
+        {
+            case "--rig":     rig = Next(); break;
+            case "--com":     com = Next(); break;
+            case "--baud":    baud = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+            case "--rigctld": rigctldPath = Next(); break;
+            case "--host":    host = Next(); break;
+            case "--port":    port = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+            case "--vfo":     vfoMode = true; break;
+            case "--list":
+                list = true;
+                if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) listQuery = args[++i];
+                break;
+            case "--help" or "-h" or "/?":
+                Console.WriteLine("""
+                    BoltCat.Test — CAT test via rigctld
 
-                Gebruik: BoltCat.Test [--host 127.0.0.1] [--port 4532] [--vfo]
+                    Gebruik:
+                      BoltCat.Test --rig <model> --com <poort> [--baud <baud>]
+                      BoltCat.Test [--host 127.0.0.1] [--port 4532]     (rigctld draait al)
+                      BoltCat.Test --list [zoekterm]
 
-                  --vfo   alleen als rigctld met -o / --vfo is gestart
-                          (VFO B uitlezen; niet gebruiken bij FT-817/857/897)
+                      --rig <model>     Hamlib model: nummer of naam, bijv. ft-897d, ft-950, ic-7300
+                      --com <poort>     COM3 (Windows) of /dev/ttyUSB0 (Linux)
+                      --baud <baud>     zelfde als de CAT RATE in het menu van de radio
+                      --vfo             rigctld met VFO-modus (VFO B uitlezen) — niet bij FT-817/857/897
+                      --rigctld <pad>   ander rigctld gebruiken dan het meegeleverde
+                      --list [term]     radio's opzoeken, bijv. --list 897
 
-                Start eerst rigctld, bijvoorbeeld voor een FT-897D:
-                  rigctl -l | findstr 897          (modelnummer opzoeken)
-                  rigctld -m <model> -r COM3 -s 4800
-                """);
-            return 0;
-        default:
-            Console.Error.WriteLine($"Onbekende optie: {args[i]} (zie --help)");
-            return 1;
+                    Voorbeeld FT-897D:
+                      BoltCat.Test --rig ft-897d --com COM3 --baud 4800
+                    """);
+                return 0;
+            default:
+                Console.Error.WriteLine($"Onbekende optie: {args[i]} (zie --help)");
+                return 1;
+        }
     }
+    catch (Exception ex) when (ex is ArgumentException or FormatException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
+}
+
+// ── Modellen opzoeken ─────────────────────────────────────────────────────
+if (list || (rig is not null && !int.TryParse(rig, out _)))
+{
+    var exe = RigctldProcess.FindExecutable(rigctldPath);
+    if (exe is null)
+    {
+        Console.Error.WriteLine("rigctld niet gevonden (map 'hamlib' naast BoltCat.Test, of --rigctld <pad>).");
+        return 1;
+    }
+    var models = await RigctldProcess.ListModelsAsync(exe);
+
+    if (list)
+    {
+        var shown = listQuery is null ? models : RigctldProcess.FindModels(models, listQuery);
+        foreach (var m in shown) Console.WriteLine(m);
+        Console.WriteLine($"{shown.Count} radio's");
+        return 0;
+    }
+
+    var found = RigctldProcess.FindModels(models, rig!);
+    static string N(string x) => new string(x.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+    bool exact = found.Count > 0 && (N(found[0].Model) == N(rig!) || N(found[0].Manufacturer + found[0].Model) == N(rig!));
+    if (found.Count == 0)
+    {
+        Console.Error.WriteLine($"Geen radio gevonden voor '{rig}'. Zoek met --list <term>.");
+        return 1;
+    }
+    if (found.Count > 1 && !exact)
+    {
+        Console.Error.WriteLine($"Meerdere radio's voor '{rig}', kies er een met --rig <nummer> of de volledige naam:");
+        foreach (var m in found) Console.Error.WriteLine(m);
+        return 1;
+    }
+    rig = found[0].Number.ToString(CultureInfo.InvariantCulture);
+    Console.WriteLine($"Radio: {found[0]}");
+}
+
+// ── rigctld starten ───────────────────────────────────────────────────────
+RigctldProcess? rigctld = null;
+if (rig is not null)
+{
+    rigctld = new RigctldProcess(new RigctldOptions
+    {
+        Model = int.Parse(rig, CultureInfo.InvariantCulture),
+        SerialPort = com,
+        Baud = baud,
+        ListenHost = host,
+        TcpPort = port,
+        VfoMode = vfoMode,
+        Executable = rigctldPath,
+    });
+    rigctld.Output += l => Console.WriteLine($"  rigctld> {l}");
+    try
+    {
+        await rigctld.StartAsync();
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"FOUT: {ex.Message}");
+        return 1;
+    }
+
+    // Ctrl+C: rigctld niet achterlaten
+    Console.CancelKeyPress += (_, _) =>
+    {
+        try { rigctld.StopAsync().GetAwaiter().GetResult(); } catch { }
+    };
 }
 
 Console.WriteLine($"BoltCat.Test — rigctld op {host}:{port}{(vfoMode ? " (VFO-modus)" : "")}");
@@ -141,6 +237,7 @@ if (client.IsConnected)
     try { await client.SetPttAsync(false); } catch { }
 }
 await poller.StopAsync();
+if (rigctld is not null) await rigctld.DisposeAsync();
 return 0;
 
 // Elk leescommando 5x, tijd per keer. Laat zien welk commando de poller ophoudt.

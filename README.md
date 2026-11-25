@@ -40,17 +40,20 @@ tools/
 
 ## Testen met een radio
 
-`BoltCat.Test` zit als losse exe in de build-zips (`BoltCat.Test-…-win-x64.zip`).
-Start eerst zelf `rigctld` (zit in de Hamlib Windows-zip, map `bin`):
+`BoltCat.Test` zit in de build-zips (`BoltCat.Test-…-win-x64.zip`), met rigctld
+(Hamlib) erbij in de map `hamlib`. Je hoeft niets apart te installeren:
 
 ```
-rigctl -l | findstr 897                 modelnummer van je radio opzoeken
-rigctld -m <model> -r COM3 -s 4800      FT-897D: baudrate zoals ingesteld in menu CAT RATE
-BoltCat.Test
+BoltCat.Test --rig ft-897d --com COM3 --baud 4800
+BoltCat.Test --list 897                   radio's opzoeken
 ```
 
-Je ziet live frequentie, mode, PTT en S-meter. Typ `help` voor de commando's
-(`f 7.074`, `m LSB`, `tx`, `rx`, `toggle`, `split on`, `raw …`).
+`--baud` moet gelijk zijn aan de CAT RATE in het menu van de radio. Draait er al
+een rigctld op poort 4532, dan wordt die gebruikt. Je ziet live frequentie, mode,
+PTT en S-meter; typ `help` voor de commando's (`f 7.074`, `m LSB`, `tx`, `rx`,
+`toggle`, `split on`, `bench`, `raw …`).
+
+Linux: installeer rigctld via `sudo apt install libhamlib-utils`.
 
 ## Bouwen
 
@@ -80,7 +83,7 @@ git push origin v0.1.0
 
 - [x] Project setup
 - [x] `BoltCat.Core` — `RigctldClient`, `RigState`, `RigPoller`
-- [ ] rigctld auto-start (meegeleverde binary Windows + Linux)
+- [x] rigctld auto-start (meegeleverd voor Windows, systeem-rigctld op Linux)
 - [ ] MVP GUI — VFO A/B, mode, PTT, A↔B / A→B / Split, band, S-meter, status
 - [ ] JSON configuratie — COM poort, baud, Hamlib rig model, MIDI
 - [ ] MIDI fase 1 — VFO encoder + PTT

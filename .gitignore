@@ -25,3 +25,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Meegeleverde Hamlib binaries (CI haalt ze op)
+hamlib/
