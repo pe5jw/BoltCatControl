@@ -74,6 +74,7 @@ while (true)
                       a2b             A -> B kopieren    (niet op FT-897)
                       vfo a|b         VFO kiezen
                       s               huidige toestand tonen
+                      bench           meet per CAT-commando hoe lang de radio erover doet
                       raw <cmd>       ruw rigctld commando, bijv. 'raw get_level SWR' of 'raw dump_caps'
                       q               stoppen (PTT gaat eerst uit)
                     """);
@@ -111,6 +112,10 @@ while (true)
                 Console.WriteLine(Format(poller.State));
                 break;
 
+            case "bench":
+                await Bench(client);
+                break;
+
             case "raw" when p.Length > 1:
                 var r = await client.SendAsync(string.Join(' ', p[1..]));
                 foreach (var kv in r.Values)
@@ -137,6 +142,39 @@ if (client.IsConnected)
 }
 await poller.StopAsync();
 return 0;
+
+// Elk leescommando 5x, tijd per keer. Laat zien welk commando de poller ophoudt.
+static async Task Bench(RigctldClient client)
+{
+    // In VFO-modus komt "currVFO" direct na de commandonaam
+    string V(string c)
+    {
+        if (!client.VfoMode) return c;
+        int sp = c.IndexOf(' ');
+        return sp < 0 ? c + " currVFO" : c[..sp] + " currVFO" + c[sp..];
+    }
+    string[] cmds = ["get_freq", "get_mode", "get_ptt", "get_level STRENGTH", "get_split_vfo", "get_vfo"];
+    Console.WriteLine("  commando              gem.    max   resultaat");
+    long total = 0;
+    foreach (var c in cmds)
+    {
+        var cmd = c == "get_vfo" ? c : V(c);
+        var times = new List<long>();
+        int code = 0;
+        string? err = null;
+        for (int i = 0; i < 5; i++)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            try { code = (await client.SendAsync(cmd)).Code; }
+            catch (Exception ex) { err = ex.Message; if (!client.IsConnected) await client.ConnectAsync(); }
+            times.Add(sw.ElapsedMilliseconds);
+        }
+        var avg = (long)times.Average();
+        if (c is "get_freq" or "get_mode" or "get_ptt" or "get_level STRENGTH") total += avg;
+        Console.WriteLine($"  {c,-20} {avg,5} ms {times.Max(),5} ms  {err ?? $"RPRT {code} ({RigctldProtocol.ErrorText(code)})"}");
+    }
+    Console.WriteLine($"  → één poll-ronde (freq+mode+ptt+S-meter) ≈ {total} ms");
+}
 
 static long ParseFreq(string s)
 {
