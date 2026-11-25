@@ -30,6 +30,12 @@ public sealed class RigPoller : IAsyncDisposable
     /// <summary>Wachttijd voor een nieuwe verbindingspoging.</summary>
     public TimeSpan ReconnectDelay { get; set; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// Hamlib cache timeout die na het verbinden wordt ingesteld (rigctld staat vaak op
+    /// 1000 ms, waardoor de frequentie maar 1x per seconde verandert). Null = niet wijzigen.
+    /// </summary>
+    public TimeSpan? CacheTimeout { get; set; } = TimeSpan.FromMilliseconds(100);
+
     /// <summary>Split en VFO B worden elke zoveelste ronde gelezen (minder CAT verkeer).</summary>
     public int SlowEvery { get; set; } = 5;
 
@@ -87,6 +93,7 @@ public sealed class RigPoller : IAsyncDisposable
                     _strengthFailing = false;
                     _splitFailing = false;
                     _cycle = 0;
+                    await ApplyCacheTimeoutAsync(ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
                 catch (Exception ex)
@@ -112,6 +119,25 @@ public sealed class RigPoller : IAsyncDisposable
                 await _client.DisconnectAsync().ConfigureAwait(false);
                 await Delay(ReconnectDelay, ct).ConfigureAwait(false);
             }
+        }
+    }
+
+    private async Task ApplyCacheTimeoutAsync(CancellationToken ct)
+    {
+        if (CacheTimeout is not { } t) return;
+        var ms = (int)t.TotalMilliseconds;
+        try
+        {
+            var before = await _client.GetCacheTimeoutAsync(ct).ConfigureAwait(false);
+            if (before != ms)
+            {
+                await _client.SetCacheTimeoutAsync(ms, ct).ConfigureAwait(false);
+                Notice?.Invoke($"Hamlib cache {before} ms → {ms} ms");
+            }
+        }
+        catch (RigctldException ex)
+        {
+            Notice?.Invoke($"Hamlib cache instellen niet ondersteund ({ex.Message})");
         }
     }
 

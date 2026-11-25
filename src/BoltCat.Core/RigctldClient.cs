@@ -39,6 +39,9 @@ public sealed class RigctldClient : IAsyncDisposable
 
     public bool IsConnected => _tcp?.Connected == true && _writer is not null;
 
+    /// <summary>Elk commando met de ruwe antwoordregels (voor diagnose).</summary>
+    public event Action<string, IReadOnlyList<string>>? Trace;
+
     // ── Verbinding ────────────────────────────────────────────────────────
 
     public async Task ConnectAsync(CancellationToken ct = default)
@@ -127,6 +130,16 @@ public sealed class RigctldClient : IAsyncDisposable
                 lines.Add(line);
                 if (line.StartsWith("RPRT", StringComparison.Ordinal))
                     break;
+            }
+            Trace?.Invoke(command, lines);
+
+            // Controleren of dit antwoord bij ons commando hoort. In extended modus begint
+            // het antwoord met de naam van het commando ("get_freq:"). Zo niet, dan loopt
+            // de stream uit de pas (bijv. door een onbekend commando) → opnieuw verbinden.
+            if (!RigctldProtocol.EchoMatches(command, lines))
+            {
+                Drop();
+                throw new IOException($"Antwoord van rigctld hoort niet bij '{command}' (kreeg '{lines[0]}') — opnieuw verbinden");
             }
             return RigctldProtocol.Parse(lines);
         }
@@ -235,6 +248,22 @@ public sealed class RigctldClient : IAsyncDisposable
 
     public Task VfoOpAsync(VfoOp op, CancellationToken ct = default) =>
         Ensure(Cmd("vfo_op", Vfo.Current, RigctldProtocol.VfoOpName(op)), ct);
+
+    // ── Hamlib cache ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Hoe lang rigctld een uitgelezen waarde (freq, mode, ...) hergebruikt voordat hij
+    /// de radio opnieuw vraagt. Standaard vaak 1000 ms — te traag voor een VFO knop.
+    /// </summary>
+    public async Task<int> GetCacheTimeoutAsync(CancellationToken ct = default)
+    {
+        var r = await Ensure("get_cache", ct).ConfigureAwait(false);
+        return RigctldProtocol.ParseInt(r.Value());
+    }
+
+    /// <summary>Cache timeout in ms, 0 = cache uit.</summary>
+    public Task SetCacheTimeoutAsync(int milliseconds, CancellationToken ct = default) =>
+        Ensure($"set_cache {Inv(Math.Max(0, milliseconds))}", ct);
 
     // ── S-meter ───────────────────────────────────────────────────────────
 

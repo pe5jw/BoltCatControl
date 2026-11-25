@@ -116,6 +116,26 @@ public class RigctldProcessTests(ITestOutputHelper output)
         await client.SetSplitAsync(true, Vfo.B);
         Assert.True((await client.GetSplitAsync()).Split);
 
+        // Hamlib cache (standaard vaak 1000 ms) instelbaar
+        var cacheBefore = await client.GetCacheTimeoutAsync();
+        output.WriteLine($"cache standaard: {cacheBefore} ms");
+        await client.SetCacheTimeoutAsync(100);
+        Assert.Equal(100, await client.GetCacheTimeoutAsync());
+
+        // Onbekend commando: mag een fout geven, maar daarna moet alles weer kloppen
+        client.Trace += (cmd, lines) => Log($"  >> {cmd}  <<  {string.Join(" | ", lines)}");
+        try
+        {
+            var r = await client.SendAsync("bestaat_niet");
+            Log($"onbekend commando: RPRT {r.Code}");
+        }
+        catch (Exception ex) when (ex is IOException or TimeoutException)
+        {
+            Log($"onbekend commando: {ex.GetType().Name}: {ex.Message}");
+        }
+        if (!client.IsConnected) await client.ConnectAsync();
+        Assert.Equal(14_074_000, await client.GetFrequencyAsync());
+
         var strength = await client.GetStrengthAsync();
         output.WriteLine($"dummy S-meter: {strength} dB → {SMeter.Format(strength)}");
 

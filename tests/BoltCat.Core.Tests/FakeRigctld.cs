@@ -30,6 +30,11 @@ internal sealed class FakeRigctld : IAsyncDisposable
     /// <summary>Foutcode voor get_level (0 = OK), bijv. -5 om een tijdelijke radio-timeout te simuleren.</summary>
     public volatile int StrengthCode;
 
+    public int CacheMs = 1000;
+
+    /// <summary>Volgende antwoord hoort bij een ander commando (stream uit de pas).</summary>
+    public volatile bool WrongAnswerOnce;
+
     /// <summary>Commando's waar niet op geantwoord wordt (timeout simuleren).</summary>
     public readonly ConcurrentDictionary<string, bool> Mute = new();
 
@@ -75,6 +80,12 @@ internal sealed class FakeRigctld : IAsyncDisposable
                 var cmd = line.TrimStart('+').TrimStart('\\');
                 var name = cmd.Split(' ')[0];
                 if (Mute.ContainsKey(name)) continue;
+                if (WrongAnswerOnce)
+                {
+                    WrongAnswerOnce = false;
+                    await writer.WriteAsync("get_split_vfo:\nSplit: 0\nTX VFO: None\nRPRT 0\n");
+                    continue;
+                }
                 await writer.WriteAsync(Respond(cmd));
             }
         }
@@ -124,6 +135,11 @@ internal sealed class FakeRigctld : IAsyncDisposable
                 else if (p[^1] == "TOGGLE") (FreqA, FreqB) = (FreqB, FreqA);
                 else return "vfo_op:\nRPRT -1\n";
                 return Ok($"vfo_op: {p[^1]}");
+            case "get_cache":
+                return $"get_cache:\nTimeout (msecs): {CacheMs}\nRPRT 0\n";
+            case "set_cache":
+                CacheMs = int.Parse(p[1], CultureInfo.InvariantCulture);
+                return Ok($"set_cache: {p[1]}");
             case "get_vfo":
                 return "get_vfo:\nVFO: VFOA\nRPRT 0\n";
             default:

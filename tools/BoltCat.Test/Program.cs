@@ -141,7 +141,21 @@ Console.WriteLine("Typ 'help' voor commando's, 'q' om te stoppen.\n");
 await using var client = new RigctldClient(host, port, vfoMode);
 await using var poller = new RigPoller(client);
 
-poller.StateChanged += s => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {Format(s)}");
+// Alleen een nieuwe regel als frequentie, mode, PTT, split of verbinding verandert.
+// De S-meter (verandert continu) staat in de venstertitel, anders kun je niet typen.
+RigState? lastPrinted = null;
+bool trace = false;
+poller.StateChanged += s =>
+{
+    try { Console.Title = $"BoltCat.Test — {Format(s)}"; } catch { /* geen console titel (Linux/redirect) */ }
+    if (lastPrinted is not null && (lastPrinted with { StrengthDb = s.StrengthDb }) == s) return;
+    lastPrinted = s;
+    Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {Format(s)}");
+};
+client.Trace += (c, lines) =>
+{
+    if (trace) Console.WriteLine($"  >> {c}   << {string.Join(" | ", lines)}");
+};
 poller.Notice       += n => Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] ! {n}");
 poller.Start();
 
@@ -171,6 +185,8 @@ while (true)
                       vfo a|b         VFO kiezen
                       s               huidige toestand tonen
                       bench           meet per CAT-commando hoe lang de radio erover doet
+                      trace           ruwe rigctld commando's en antwoorden tonen (aan/uit)
+                      cache [ms]      Hamlib cache tonen of instellen (BoltCat zet hem op 100 ms)
                       raw <cmd>       ruw rigctld commando, bijv. 'raw get_level SWR' of 'raw dump_caps'
                       q               stoppen (PTT gaat eerst uit)
                     """);
@@ -205,11 +221,21 @@ while (true)
                 break;
 
             case "s":
-                Console.WriteLine(Format(poller.State));
+                Console.WriteLine($"  {Format(poller.State)}");
                 break;
 
             case "bench":
                 await Bench(client);
+                break;
+
+            case "trace":
+                trace = !trace;
+                Console.WriteLine($"  trace {(trace ? "aan" : "uit")}");
+                break;
+
+            case "cache":
+                if (p.Length > 1) await client.SetCacheTimeoutAsync(int.Parse(p[1], CultureInfo.InvariantCulture));
+                Console.WriteLine($"  Hamlib cache: {await client.GetCacheTimeoutAsync()} ms");
                 break;
 
             case "raw" when p.Length > 1:
@@ -289,5 +315,6 @@ static string Format(RigState s)
     var meter = s.StrengthDb is { } db ? $"{SMeter.Format(db),-6} ({db,4} dB)" : "S-meter n.v.t.";
     var split = s.Split ? $"  SPLIT (TX {s.TxVfo})" : "";
     var pb = s.Passband is > 0 ? $"{s.Passband,5} Hz" : "        "; // 0 = standaardfilter van de radio
-    return $"{f}{b}  {s.Mode,-6} {pb}  {(s.Ptt ? "TX" : "RX")}  {meter}{split}";
+    var mode = string.IsNullOrEmpty(s.Mode) ? "?" : s.Mode; // leeg = Hamlib kent deze mode niet
+    return $"{f}{b}  {mode,-6} {pb}  {(s.Ptt ? "TX" : "RX")}  {meter}{split}";
 }

@@ -98,6 +98,32 @@ public class RigPollerTests
     }
 
     [Fact]
+    public async Task Zet_hamlib_cache_na_verbinden()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+        Assert.Equal(100, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Herstelt_na_antwoord_uit_de_pas()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+
+        fake.WrongAnswerOnce = true;
+        fake.FreqA = 10_136_000;
+        var s = await WaitFor(poller, s => s.Connected && s.FrequencyA == 10_136_000);
+        Assert.Equal(-12, s.StrengthDb); // S-meter niet ten onrechte uitgezet
+    }
+
+    [Fact]
     public async Task Verbindt_opnieuw_na_wegvallen()
     {
         await using var fake = new FakeRigctld();
