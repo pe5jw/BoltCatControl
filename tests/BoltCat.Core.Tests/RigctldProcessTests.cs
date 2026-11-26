@@ -47,6 +47,35 @@ public class RigctldProcessTests(ITestOutputHelper output)
         Assert.Equal(new[] { 1023, 1043 }, found.Select(m => m.Number).Order());
     }
 
+    [Theory]
+    [InlineData("1043", 1043)]     // bestaand modelnummer
+    [InlineData("ft-897d", 1043)]  // exacte naam
+    [InlineData("FT897D", 1043)]
+    [InlineData("950", 1028)]      // geen nummer → op naam, maar één treffer
+    [InlineData("ic-7300", 3073)]
+    public void Model_kiezen(string query, int expected)
+    {
+        var (model, _) = RigctldProcess.ResolveModel(RigctldProcess.ParseModelList(ModelListSample), query);
+        Assert.Equal(expected, model?.Number);
+    }
+
+    [Fact]
+    public void Model_kiezen_897_is_niet_eenduidig()
+    {
+        // 897 is geen Hamlib modelnummer → zoeken op naam → FT-897 en FT-897D
+        var (model, candidates) = RigctldProcess.ResolveModel(RigctldProcess.ParseModelList(ModelListSample), "897");
+        Assert.Null(model);
+        Assert.Equal(new[] { 1023, 1043 }, candidates.Select(m => m.Number).Order());
+    }
+
+    [Fact]
+    public void Model_kiezen_onbekend()
+    {
+        var (model, candidates) = RigctldProcess.ResolveModel(RigctldProcess.ParseModelList(ModelListSample), "ts-2000");
+        Assert.Null(model);
+        Assert.Empty(candidates);
+    }
+
     [Fact]
     public void Argumenten_opbouwen()
     {

@@ -200,6 +200,33 @@ public sealed class RigctldProcess : IAsyncDisposable
             .ToList();
     }
 
+    /// <summary>
+    /// Eén radio kiezen voor wat de gebruiker intypte (nummer of naam).
+    /// Lukt dat niet eenduidig, dan is <c>Model</c> null en staan de kandidaten in <c>Candidates</c>.
+    ///   "1043" → FT-897D (bestaand modelnummer)
+    ///   "ft-897d" / "FT897D" → FT-897D (exacte naam)
+    ///   "897" → geen nummer, dus zoeken op naam → FT-897 én FT-897D → kiezen
+    /// </summary>
+    public static (RigModel? Model, IReadOnlyList<RigModel> Candidates) ResolveModel(IEnumerable<RigModel> models, string query)
+    {
+        var all = models as IReadOnlyList<RigModel> ?? models.ToList();
+        query = query.Trim();
+
+        if (int.TryParse(query, out var n) && all.FirstOrDefault(m => m.Number == n) is { } byNumber)
+            return (byNumber, new[] { byNumber });
+
+        // Geen bestaand nummer → op naam zoeken ("897" vindt FT-897 en FT-897D)
+        var found = FindModels(all, query);
+        if (found.Count == 1) return (found[0], found);
+
+        static string Norm(string s) => new string(s.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        var q2 = Norm(query);
+        var exact = found.Where(m => Norm(m.Model) == q2 || Norm(m.Manufacturer + m.Model) == q2).ToList();
+        if (exact.Count == 1) return (exact[0], found);
+
+        return (null, found);
+    }
+
     // ── Starten / stoppen ─────────────────────────────────────────────────
 
     public async Task StartAsync(CancellationToken ct = default)

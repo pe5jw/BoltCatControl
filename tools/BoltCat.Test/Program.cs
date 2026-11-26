@@ -67,7 +67,7 @@ for (int i = 0; i < args.Length; i++)
 }
 
 // ── Modellen opzoeken ─────────────────────────────────────────────────────
-if (list || (rig is not null && !int.TryParse(rig, out _)))
+if (list || rig is not null)
 {
     var exe = RigctldProcess.FindExecutable(rigctldPath);
     if (exe is null)
@@ -85,22 +85,22 @@ if (list || (rig is not null && !int.TryParse(rig, out _)))
         return 0;
     }
 
-    var found = RigctldProcess.FindModels(models, rig!);
-    static string N(string x) => new string(x.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
-    bool exact = found.Count > 0 && (N(found[0].Model) == N(rig!) || N(found[0].Manufacturer + found[0].Model) == N(rig!));
-    if (found.Count == 0)
+    var (model, candidates) = RigctldProcess.ResolveModel(models, rig!);
+    if (model is null)
     {
-        Console.Error.WriteLine($"Geen radio gevonden voor '{rig}'. Zoek met --list <term>.");
+        if (candidates.Count == 0)
+        {
+            Console.Error.WriteLine($"Geen radio gevonden voor '{rig}'. Zoek met --list <term>.");
+        }
+        else
+        {
+            Console.Error.WriteLine($"Meerdere radio's passen bij '{rig}'. Kies er een met --rig <nummer> of de volledige naam:");
+            foreach (var m in candidates) Console.Error.WriteLine(m);
+        }
         return 1;
     }
-    if (found.Count > 1 && !exact)
-    {
-        Console.Error.WriteLine($"Meerdere radio's voor '{rig}', kies er een met --rig <nummer> of de volledige naam:");
-        foreach (var m in found) Console.Error.WriteLine(m);
-        return 1;
-    }
-    rig = found[0].Number.ToString(CultureInfo.InvariantCulture);
-    Console.WriteLine($"Radio: {found[0]}");
+    rig = model.Number.ToString(CultureInfo.InvariantCulture);
+    Console.WriteLine($"Radio: {model}");
 }
 
 // ── rigctld starten ───────────────────────────────────────────────────────
@@ -124,7 +124,8 @@ if (rig is not null)
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"FOUT: {ex.Message}");
+        // De uitvoer van rigctld staat hierboven al; alleen de samenvatting herhalen
+        Console.Error.WriteLine($"FOUT: {ex.Message.Split(Environment.NewLine)[0]}");
         return 1;
     }
 
