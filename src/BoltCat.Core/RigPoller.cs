@@ -20,6 +20,7 @@ public sealed class RigPoller : IAsyncDisposable
     private bool _splitSupported = true;
     private bool _strengthFailing;
     private bool _splitFailing;
+    private bool _radioFailing;
     private long _cycle;
 
     public RigPoller(RigctldClient client) => _client = client;
@@ -31,10 +32,15 @@ public sealed class RigPoller : IAsyncDisposable
     public TimeSpan ReconnectDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Hamlib cache timeout die na het verbinden wordt ingesteld (rigctld staat vaak op
-    /// 1000 ms, waardoor de frequentie maar 1x per seconde verandert). Null = niet wijzigen.
+    /// Hamlib cache timeout die na het verbinden wordt ingesteld. rigctld staat standaard
+    /// op 1000 ms (frequentie verandert dan ~1x per seconde). Lager is sneller, maar niet
+    /// elke radio kan dat bijhouden: een FT-897D geeft bij 100 ms timeouts (RPRT -5).
+    /// Null = niet wijzigen (standaard).
     /// </summary>
-    public TimeSpan? CacheTimeout { get; set; } = TimeSpan.FromMilliseconds(100);
+    public TimeSpan? CacheTimeout { get; set; }
+
+    /// <summary>Wachttijd na een fout van de radio (timeout) voor een nieuwe poging.</summary>
+    public TimeSpan RadioRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>Split en VFO B worden elke zoveelste ronde gelezen (minder CAT verkeer).</summary>
     public int SlowEvery { get; set; } = 5;
@@ -92,6 +98,7 @@ public sealed class RigPoller : IAsyncDisposable
                     _splitSupported = true;
                     _strengthFailing = false;
                     _splitFailing = false;
+                    _radioFailing = false;
                     _cycle = 0;
                     await ApplyCacheTimeoutAsync(ct).ConfigureAwait(false);
                 }
@@ -109,12 +116,25 @@ public sealed class RigPoller : IAsyncDisposable
                 var cycle = Interlocked.Increment(ref _cycle);
                 var full = cycle <= 0 || cycle % Math.Max(1, SlowEvery) == 1 || SlowEvery <= 1;
                 Publish(await ReadAsync(full, ct).ConfigureAwait(false));
+                if (_radioFailing) Notice?.Invoke("Radio reageert weer");
+                _radioFailing = false;
                 await Delay(Interval, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (RigctldException ex)
+            {
+                // rigctld is er wel, maar de radio antwoordt niet of geeft een fout
+                // (timeout, uitgeschakeld, kabel los). Verbinding met rigctld blijft staan;
+                // laatste waarden vasthouden en het straks opnieuw proberen.
+                if (!_radioFailing)
+                    Notice?.Invoke($"Radio reageert niet: {ex.Message} — opnieuw proberen");
+                _radioFailing = true;
+                Publish(State with { Connected = true, Error = $"Radio reageert niet: {ex.Message}" });
+                await Delay(RadioRetryDelay, ct).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
-                // rigctld weg of radio reageert niet: opnieuw verbinden
+                // rigctld weg (TCP fout, antwoord uit de pas): opnieuw verbinden
                 Publish(RigState.Disconnected(ex.Message));
                 await _client.DisconnectAsync().ConfigureAwait(false);
                 await Delay(ReconnectDelay, ct).ConfigureAwait(false);
@@ -132,7 +152,7 @@ public sealed class RigPoller : IAsyncDisposable
             if (before != ms)
             {
                 await _client.SetCacheTimeoutAsync(ms, ct).ConfigureAwait(false);
-                Notice?.Invoke($"Hamlib cache {before} ms → {ms} ms");
+                Notice?.Invoke($"Hamlib cache {before} ms -> {ms} ms");
             }
         }
         catch (RigctldException ex)

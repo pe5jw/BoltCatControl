@@ -14,7 +14,8 @@ int port = RigctldProtocol.DefaultPort;
 bool vfoMode = false;
 string? rig = null, com = null, rigctldPath = null, listQuery = null;
 int? baud = null;
-bool list = false;
+int? cacheMs = null, intervalMs = null;
+bool list = false, debug = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -30,6 +31,9 @@ for (int i = 0; i < args.Length; i++)
             case "--host":    host = Next(); break;
             case "--port":    port = int.Parse(Next(), CultureInfo.InvariantCulture); break;
             case "--vfo":     vfoMode = true; break;
+            case "--cache":    cacheMs = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+            case "--interval": intervalMs = int.Parse(Next(), CultureInfo.InvariantCulture); break;
+            case "--debug":    debug = true; break;
             case "--list":
                 list = true;
                 if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) listQuery = args[++i];
@@ -48,6 +52,9 @@ for (int i = 0; i < args.Length; i++)
                       --baud <baud>     zelfde als de CAT RATE in het menu van de radio
                       --vfo             rigctld met VFO-modus (VFO B uitlezen) — niet bij FT-817/857/897
                       --rigctld <pad>   ander rigctld gebruiken dan het meegeleverde
+                      --cache <ms>      Hamlib cache instellen (standaard niet wijzigen; rigctld staat op 1000)
+                      --interval <ms>   hoe vaak de radio wordt uitgelezen (standaard 200)
+                      --debug           rigctld met -vvvvv, alle seriele communicatie naar rigctld.log
                       --list [term]     radio's opzoeken, bijv. --list 897
 
                     Voorbeeld FT-897D:
@@ -116,8 +123,27 @@ if (rig is not null)
         TcpPort = port,
         VfoMode = vfoMode,
         Executable = rigctldPath,
+        ExtraArgs = debug ? new[] { "-vvvvv" } : Array.Empty<string>(),
     });
-    rigctld.Output += l => Console.WriteLine($"  rigctld> {l}");
+
+    if (debug)
+    {
+        // Alles naar rigctld.log, op het scherm alleen de start/stop regels
+        var logPath = Path.Combine(Environment.CurrentDirectory, "rigctld.log");
+        var log = new StreamWriter(logPath, append: false) { AutoFlush = true };
+        var logLock = new object();
+        Console.WriteLine($"Debug: rigctld uitvoer -> {logPath}");
+        rigctld.Output += l =>
+        {
+            lock (logLock) log.WriteLine($"{DateTime.Now:HH:mm:ss.fff} {l}");
+            if (l.StartsWith("Start:") || l.StartsWith("rigctld ") || l.StartsWith("Er draait"))
+                Console.WriteLine($"  rigctld> {l}");
+        };
+    }
+    else
+    {
+        rigctld.Output += l => Console.WriteLine($"  rigctld> {l}");
+    }
     try
     {
         await rigctld.StartAsync();
@@ -141,6 +167,8 @@ Console.WriteLine("Typ 'help' voor commando's, 'q' om te stoppen.\n");
 
 await using var client = new RigctldClient(host, port, vfoMode);
 await using var poller = new RigPoller(client);
+if (cacheMs is { } c) poller.CacheTimeout = TimeSpan.FromMilliseconds(c);
+if (intervalMs is { } iv) poller.Interval = TimeSpan.FromMilliseconds(iv);
 
 // Alleen een nieuwe regel als frequentie, mode, PTT, split of verbinding verandert.
 // De S-meter (verandert continu) staat in de venstertitel, anders kun je niet typen.
@@ -187,7 +215,7 @@ while (true)
                       s               huidige toestand tonen
                       bench           meet per CAT-commando hoe lang de radio erover doet
                       trace           ruwe rigctld commando's en antwoorden tonen (aan/uit)
-                      cache [ms]      Hamlib cache tonen of instellen (BoltCat zet hem op 100 ms)
+                      cache [ms]      Hamlib cache tonen of instellen
                       raw <cmd>       ruw rigctld commando, bijv. 'raw get_level SWR' of 'raw dump_caps'
                       q               stoppen (PTT gaat eerst uit)
                     """);
@@ -297,19 +325,20 @@ static async Task Bench(RigctldClient client)
         if (c is "get_freq" or "get_mode" or "get_ptt" or "get_level STRENGTH") total += avg;
         Console.WriteLine($"  {c,-20} {avg,5} ms {times.Max(),5} ms  {err ?? $"RPRT {code} ({RigctldProtocol.ErrorText(code)})"}");
     }
-    Console.WriteLine($"  → één poll-ronde (freq+mode+ptt+S-meter) ≈ {total} ms");
+    Console.WriteLine($"  -> één poll-ronde (freq+mode+ptt+S-meter) ≈ {total} ms");
 }
 
 static long ParseFreq(string s)
 {
     var v = double.Parse(s.Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture);
-    return (long)Math.Round(v < 1_000 ? v * 1_000_000 : v); // < 1000 → MHz
+    return (long)Math.Round(v < 1_000 ? v * 1_000_000 : v); // < 1000 -> MHz
 }
 
 static string Format(RigState s)
 {
     if (!s.Connected)
-        return $"niet verbonden — {s.Error ?? "wachten op rigctld"}";
+        return $"niet verbonden - {s.Error ?? "wachten op rigctld"}";
+    var warn = s.Error is null ? "" : $"  [! {s.Error}]";
 
     var f = s.FrequencyA is { } hz ? $"{hz / 1_000_000.0:0.000000} MHz" : "? MHz";
     var b = s.FrequencyB is { } hzB ? $"  B {hzB / 1_000_000.0:0.000000}" : "";
@@ -317,5 +346,5 @@ static string Format(RigState s)
     var split = s.Split ? $"  SPLIT (TX {s.TxVfo})" : "";
     var pb = s.Passband is > 0 ? $"{s.Passband,5} Hz" : "        "; // 0 = standaardfilter van de radio
     var mode = string.IsNullOrEmpty(s.Mode) ? "?" : s.Mode; // leeg = Hamlib kent deze mode niet
-    return $"{f}{b}  {mode,-6} {pb}  {(s.Ptt ? "TX" : "RX")}  {meter}{split}";
+    return $"{f}{b}  {mode,-6} {pb}  {(s.Ptt ? "TX" : "RX")}  {meter}{split}{warn}";
 }

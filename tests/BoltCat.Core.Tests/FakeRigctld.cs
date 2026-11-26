@@ -32,6 +32,9 @@ internal sealed class FakeRigctld : IAsyncDisposable
 
     public int CacheMs = 1000;
 
+    /// <summary>Foutcode voor get_freq (0 = OK), bijv. -5 = radio reageert niet.</summary>
+    public volatile int FreqCode;
+
     /// <summary>Volgende antwoord hoort bij een ander commando (stream uit de pas).</summary>
     public volatile bool WrongAnswerOnce;
 
@@ -101,6 +104,7 @@ internal sealed class FakeRigctld : IAsyncDisposable
         switch (p[0])
         {
             case "get_freq":
+                if (FreqCode != 0) return $"get_freq:\nRPRT {FreqCode}\n";
                 var vfo = p.Length > 1 ? p[1] : "currVFO";
                 return $"get_freq: {vfo}\nFrequency: {Inv(vfo == "VFOB" ? FreqB : FreqA)}\nRPRT 0\n";
             case "set_freq":

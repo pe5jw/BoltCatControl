@@ -98,14 +98,52 @@ public class RigPollerTests
     }
 
     [Fact]
-    public async Task Zet_hamlib_cache_na_verbinden()
+    public async Task Laat_hamlib_cache_standaard_ongemoeid()
     {
         await using var fake = new FakeRigctld();
         await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
         await using var poller = NewPoller(client);
         poller.Start();
         await WaitFor(poller, s => s.Connected);
-        Assert.Equal(100, fake.CacheMs);
+        Assert.Equal(1000, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Zet_hamlib_cache_als_ingesteld()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.CacheTimeout = TimeSpan.FromMilliseconds(300);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+        Assert.Equal(300, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Radio_timeout_verbreekt_rigctld_niet()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.RadioRetryDelay = TimeSpan.FromMilliseconds(50);
+        var notices = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        poller.Notice += notices.Enqueue;
+        poller.Start();
+        await WaitFor(poller, s => s.Connected && s.FrequencyA == 14_074_000);
+
+        fake.FreqCode = -5; // radio reageert niet
+        var failing = await WaitFor(poller, s => s.Error is not null);
+        Assert.True(failing.Connected);                 // rigctld nog verbonden
+        Assert.Equal(14_074_000, failing.FrequencyA);   // laatste waarde blijft
+        Assert.True(client.IsConnected);
+
+        fake.FreqCode = 0;
+        fake.FreqA = 18_100_000;
+        var ok = await WaitFor(poller, s => s.Error is null && s.FrequencyA == 18_100_000);
+        Assert.True(ok.Connected);
+        Assert.Single(notices, n => n.StartsWith("Radio reageert niet"));
+        Assert.Contains(notices, n => n == "Radio reageert weer");
     }
 
     [Fact]
