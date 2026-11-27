@@ -86,7 +86,10 @@ public class RigPollerTests
         await WaitFor(poller, s => s.StrengthDb == -12);
 
         fake.StrengthCode = -5;                 // radio reageert even niet
-        await Task.Delay(200);
+        // Wachten op de melding (S-meter wordt om de ronde gelezen; CI runners zijn soms traag)
+        var deadline = DateTime.UtcNow + Wait;
+        while (!notices.Any(n => n.Contains("probeer opnieuw")) && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
         Assert.Equal(-12, poller.State.StrengthDb); // vorige waarde blijft staan
         Assert.True(poller.State.Connected);
         Assert.Contains(notices, n => n.Contains("probeer opnieuw"));
