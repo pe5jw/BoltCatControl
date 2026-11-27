@@ -191,6 +191,7 @@ public class MidiTests
         Assert.Equal(new MidiControl(MidiKind.ControlChange, 1, 64), learned!.Vfo);
         Assert.Equal(EncoderMode.Offset, learned.Encoder.Mode);
         midi.Apply(learned);
+        midi.Attach(input); // in de test is er geen apparaatnaam, dus Apply sloot de nep-controller
 
         // Eén klik rechtsom = precies één stap (de tweede CC telt niet dubbel)
         input.Send(MidiKind.ControlChange, 64, 66);
