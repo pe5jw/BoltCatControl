@@ -118,6 +118,19 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Schaal_150_procent()
+    {
+        var settings = Ft897();
+        settings.UiScale = 1.5;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 7_074_000, Mode = "PKTUSB", StrengthDb = -6 });
+        Assert.True(w.Width > 1000, $"breedte {w.Width}"); // 920 × 1,5 (begrensd door het scherm)
+        Capture(w, "7-schaal-150");
+        w.SetScale(0.8, resizeWindow: true);
+        Capture(w, "8-schaal-80");
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Instellingen()
     {
         var w = new SettingsWindow(Ft897());

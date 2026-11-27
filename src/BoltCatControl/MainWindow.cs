@@ -62,6 +62,11 @@ public sealed class MainWindow : Window
     private readonly StatusPill _pillNotice  = new("");
     private readonly StatusPill _pillVersion;
 
+    // Schaal: alles (tekst, knoppen, VFO) via één LayoutTransform
+    private readonly LayoutTransformControl _scaleHost = new();
+    private double _scale = 1.0;
+    private const double BaseWidth = 920, BaseHeight = 545, BaseMinWidth = 780, BaseMinHeight = 520;
+
     public MainWindow(RigController rig, AppSettings settings, bool autoStart)
     {
         _rig = rig;
@@ -72,10 +77,10 @@ public sealed class MainWindow : Window
             ?.Split('+')[0] ?? "?";
 
         Title     = $"BoltCatControl {_version}";
-        Width     = 920;
-        Height    = 545;
-        MinWidth  = 780;
-        MinHeight = 520;
+        Width     = BaseWidth;
+        Height    = BaseHeight;
+        MinWidth  = BaseMinWidth;
+        MinHeight = BaseMinHeight;
         this.Themed(BackgroundProperty, BoltTheme.Keys.BgDeep);
 
         // ── Header ────────────────────────────────────────────────────────
@@ -290,13 +295,22 @@ public sealed class MainWindow : Window
         Add(controls, 3, 10);
         Add(bands, 4, 10);
         Add(status, 5, 10);
-        Content = root;
+        _scaleHost.Child = root;
+        Content = _scaleHost;
+        SetScale(_settings.UiScale, resizeWindow: true);
 
         // ── Koppeling met de radio ────────────────────────────────────────
         _rig.StateChanged += s => Dispatcher.UIThread.Post(() => ApplyState(s));
         _rig.Notice += n => Dispatcher.UIThread.Post(() => ShowNotice(n));
 
         KeyDown += OnKeyDown;
+        // Ctrl + scrollwiel = schaal (tunnel: vóór de VFO-cijfers het wiel krijgen)
+        AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            SetScale(_scale + (e.Delta.Y > 0 ? ScaleStep : -ScaleStep), resizeWindow: true);
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Opened += async (_, _) => await OnOpenedAsync();
         Closing += OnClosing;
 
@@ -344,7 +358,9 @@ public sealed class MainWindow : Window
     private async Task OpenSettingsAsync()
     {
         var dialog = new SettingsWindow(_settings);
-        if (await dialog.ShowDialog<bool>(this))
+        var saved = await dialog.ShowDialog<bool>(this);
+        if (Math.Abs(_settings.UiScale - _scale) > 0.001) SetScale(_settings.UiScale, resizeWindow: true);
+        if (saved)
         {
             _settings.Save();
             await ConnectAsync();
@@ -373,8 +389,51 @@ public sealed class MainWindow : Window
 
     // ── Toetsenbord ───────────────────────────────────────────────────────
 
+    public const double ScaleStep = 0.1, MinScale = 0.6, MaxScale = 2.5;
+
+    /// <summary>
+    /// Hele interface schalen (tekst, knoppen, VFO, meter). Het venster groeit/krimpt mee,
+    /// maar nooit groter dan het scherm.
+    /// </summary>
+    public void SetScale(double scale, bool resizeWindow)
+    {
+        scale = Math.Round(Math.Clamp(scale, MinScale, MaxScale), 2);
+        var factor = scale / _scale;
+        _scale = scale;
+        _settings.UiScale = scale;
+        _scaleHost.LayoutTransform = new ScaleTransform(scale, scale);
+
+        MinWidth = BaseMinWidth * scale;
+        MinHeight = BaseMinHeight * scale;
+        if (resizeWindow)
+        {
+            double w = Math.Max(MinWidth, (double.IsNaN(Width) ? BaseWidth : Width) * factor);
+            double h = Math.Max(MinHeight, (double.IsNaN(Height) ? BaseHeight : Height) * factor);
+            if (Screens?.ScreenFromWindow(this) is { } screen)
+            {
+                var area = screen.WorkingArea.Size.ToSize(screen.Scaling);
+                w = Math.Min(w, area.Width);
+                h = Math.Min(h, area.Height);
+            }
+            Width = w;
+            Height = h;
+        }
+        if (IsVisible) ShowNotice($"Schaal {scale:P0}");
+    }
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Ctrl + / Ctrl − / Ctrl 0: schaal
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            switch (e.Key)
+            {
+                case Key.OemPlus or Key.Add:       SetScale(_scale + ScaleStep, true); e.Handled = true; return;
+                case Key.OemMinus or Key.Subtract: SetScale(_scale - ScaleStep, true); e.Handled = true; return;
+                case Key.D0 or Key.NumPad0:        SetScale(1.0, true);                e.Handled = true; return;
+            }
+        }
+
         if (!_rig.State.Connected) return;
         switch (e.Key)
         {

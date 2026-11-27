@@ -39,6 +39,8 @@ public sealed class SettingsWindow : Window
     private readonly CheckBox _adaptive;
     private readonly CheckBox _vfoMode;
     private readonly CheckBox _autoConnect;
+    private readonly ComboBox _scale;
+    private static readonly double[] Scales = [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
     private readonly TextBlock _error;
     private readonly TaskCompletionSource _modelsLoaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -53,7 +55,7 @@ public sealed class SettingsWindow : Window
         _settings = settings;
         Title = "BoltCatControl — instellingen";
         Width = 560;
-        Height = 760;
+        Height = 820;
         MinWidth = 480;
         MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -114,6 +116,24 @@ public sealed class SettingsWindow : Window
         foreach (var cb in new[] { _adaptive, _vfoMode, _autoConnect })
             cb.Themed(CheckBox.ForegroundProperty, BoltTheme.Keys.Text);
 
+        // ── Weergave ──────────────────────────────────────────────────────
+        _scale = new ComboBox { MinWidth = 120, ItemsSource = Scales.Select(x => $"{x:P0}").ToList() };
+        _scale.SelectedIndex = Array.IndexOf(Scales, Scales.OrderBy(x => Math.Abs(x - settings.UiScale)).First());
+        _scale.SelectionChanged += (_, _) =>
+        {
+            if (_scale.SelectedIndex >= 0) settings.UiScale = Scales[_scale.SelectedIndex];
+        };
+        var view = Ui.Panel(new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                Ui.SectionLabel("Weergave"),
+                Labeled("Schaal", _scale),
+                Hint("Ook in het hoofdvenster: Ctrl + / Ctrl − / Ctrl 0, of Ctrl + scrollwiel."),
+            },
+        });
+
         var advanced = Ui.Panel(new StackPanel
         {
             Spacing = 8,
@@ -138,9 +158,18 @@ public sealed class SettingsWindow : Window
             {
                 Margin = new Thickness(14),
                 Spacing = 10,
-                Children = { radio, connection, advanced, _error, Ui.Row([], [cancel, save]) },
+                Children = { radio, connection, view, advanced, _error, Ui.Row([], [cancel, save]) },
             },
         };
+
+        // Instellingen in dezelfde schaal als het hoofdvenster
+        var s = Math.Clamp(settings.UiScale, MainWindow.MinScale, MainWindow.MaxScale);
+        if (Math.Abs(s - 1.0) > 0.001)
+        {
+            Content = new LayoutTransformControl { LayoutTransform = new ScaleTransform(s, s), Child = (Control)Content! };
+            Width *= s;
+            Height *= s;
+        }
 
         Opened += async (_, _) => await LoadModelsAsync();
     }

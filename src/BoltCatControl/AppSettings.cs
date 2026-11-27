@@ -27,6 +27,9 @@ public sealed class AppSettings
 
     // Bediening
     public string Theme { get; set; } = "Amber";
+
+    /// <summary>Schaal van de hele interface (1.0 = 100 %). Ctrl +/− /0 of Ctrl + scrollwiel.</summary>
+    public double UiScale { get; set; } = 1.0;
     public int StepHz { get; set; } = 100;
 
     /// <summary>Laatste frequentie per band ("20" → 14 205 000).</summary>
