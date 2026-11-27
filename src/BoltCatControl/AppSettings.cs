@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BoltCat.Core;
+using BoltCat.Core.Midi;
 
 namespace BoltCatControl;
 
@@ -35,6 +36,9 @@ public sealed class AppSettings
     public double? WindowWidth { get; set; }
     public double? WindowHeight { get; set; }
     public int StepHz { get; set; } = 100;
+
+    /// <summary>MIDI controller: apparaat, VFO encoder, PTT knop.</summary>
+    public MidiSettings Midi { get; set; } = new();
 
     /// <summary>Laatste frequentie per band ("20" → 14 205 000).</summary>
     public Dictionary<string, long> BandMemory { get; set; } = [];

@@ -56,6 +56,22 @@ PTT en S-meter; typ `help` voor de commando's (`f 7.074`, `m LSB`, `tx`, `rx`,
 
 Linux: installeer rigctld via `sudo apt install libhamlib-utils`.
 
+## MIDI
+
+In *Instellingen → MIDI*:
+
+1. Kies je controller bij **Apparaat**.
+2. **Leer VFO-knop**: draai een paar klikjes rechtsom, laat even los, dan een paar klikjes linksom.
+   BoltCatControl herkent zelf welk soort encoder het is:
+   - rond 64 of 65 (63/65, 64/66, of grotere sprongen bij snel draaien)
+   - 1 / 127 (two's complement)
+   - 1 / 65 (signed bit)
+3. **Leer PTT-knop**: druk één keer op de knop. Kies *vasthouden = zenden* of *druk aan / druk uit*.
+
+Elke klik van de VFO-knop = de stap uit het hoofdvenster (10 Hz / 100 Hz / 1 kHz).
+De **monitor** toont live wat de controller stuurt. Windows: elk MIDI apparaat;
+Linux: ALSA raw MIDI (`/dev/snd/midiC*D*`, gebruiker in de groep `audio`).
+
 ## Bouwen
 
 ```
@@ -87,7 +103,6 @@ git push origin v0.1.0
 - [x] rigctld auto-start (meegeleverd voor Windows, systeem-rigctld op Linux)
 - [x] MVP GUI — VFO A/B, mode, PTT, A↔B / A→B / Split, band, S-meter, status
 - [x] JSON configuratie — radio, COM poort, baud, cache, band-geheugen, thema
-- [ ] MIDI configuratie
-- [ ] MIDI fase 1 — VFO encoder + PTT
+- [x] MIDI fase 1 — VFO encoder + PTT (leren, live monitor)
 
 73 de PE5JW

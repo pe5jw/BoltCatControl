@@ -155,7 +155,16 @@ public class ScreenshotTests
     [AvaloniaFact]
     public void Instellingen()
     {
-        var w = new SettingsWindow(Ft897());
+        var settings = Ft897();
+        settings.Midi = new BoltCat.Core.Midi.MidiSettings
+        {
+            Device = "DJControl Starlight",
+            Vfo = new(BoltCat.Core.Midi.MidiKind.ControlChange, 1, 16),
+            Encoder = new(BoltCat.Core.Midi.EncoderMode.Offset, 65),
+            Ptt = new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 48),
+        };
+        var w = new SettingsWindow(settings);
+        w.Height = 1500; // alles in beeld voor de screenshot
         w.Show();
 
         // Wachten tot de radiolijst (rigctld -l) geladen is

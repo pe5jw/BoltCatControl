@@ -6,6 +6,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Threading;
 using BoltCat.Core;
+using BoltCat.Core.Midi;
 using BoltCatControl.Controls;
 using BoltCatControl.Theming;
 
@@ -33,6 +34,9 @@ public sealed class MainWindow : Window
     private readonly Led _ledRigctld = new("RIGCTLD");
     private readonly Led _ledCat     = new("CAT");
     private readonly Led _ledTx      = new("TX", BoltTheme.Keys.Tx);
+    private readonly Led _ledMidi    = new("MIDI", BoltTheme.Keys.Rx);
+    private readonly MidiController? _midi;
+    private readonly DispatcherTimer _midiBlink = new() { Interval = TimeSpan.FromMilliseconds(70) };
     private readonly TextBlock _radioName;
     private readonly Button _connectButton;
     private readonly ComboBox _themePicker;
@@ -68,9 +72,10 @@ public sealed class MainWindow : Window
     /// <summary>Ontwerpmaat: op deze venstergrootte is de schaal 100 %.</summary>
     private const double BaseWidth = 920, BaseHeight = 545;
 
-    public MainWindow(RigController rig, AppSettings settings, bool autoStart)
+    public MainWindow(RigController rig, AppSettings settings, bool autoStart, MidiController? midi = null)
     {
         _rig = rig;
+        _midi = midi;
         _settings = settings;
         _autoStart = autoStart;
         _version = Assembly.GetExecutingAssembly()
@@ -109,7 +114,7 @@ public sealed class MainWindow : Window
         var leds = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 10, VerticalAlignment = VerticalAlignment.Center,
-            Children = { _ledRigctld, _ledCat, _ledTx },
+            Children = { _ledRigctld, _ledCat, _ledTx, _ledMidi },
         };
         var title = new TextBlock
         {
@@ -306,6 +311,21 @@ public sealed class MainWindow : Window
         _rig.StateChanged += s => Dispatcher.UIThread.Post(() => ApplyState(s));
         _rig.Notice += n => Dispatcher.UIThread.Post(() => ShowNotice(n));
 
+        // MIDI LED: aan als het apparaat open is, knippert bij elk bericht
+        _midiBlink.Tick += (_, _) => { _midiBlink.Stop(); _ledMidi.IsOn = _midi?.IsOpen == true; };
+        if (_midi is not null)
+        {
+            _midi.MessageReceived += _ => Dispatcher.UIThread.Post(() =>
+            {
+                _ledMidi.IsOn = false;
+                _midiBlink.Stop();
+                _midiBlink.Start();
+            });
+            _midi.Notice += n => Dispatcher.UIThread.Post(() => { ShowNotice(n); _ledMidi.IsOn = _midi.IsOpen; });
+        }
+        _ledMidi.IsOn = _midi?.IsOpen == true;
+        ToolTip.SetTip(_ledMidi, _midi?.OpenDevice is { } dev ? $"MIDI: {dev}" : "MIDI: geen apparaat");
+
         KeyDown += OnKeyDown;
         // Ctrl + scrollwiel = schaal (tunnel: vóór de VFO-cijfers het wiel krijgen)
         AddHandler(PointerWheelChangedEvent, (_, e) =>
@@ -337,6 +357,7 @@ public sealed class MainWindow : Window
         e.Cancel = true;
         RememberBand();
         _settings.Save();
+        _midi?.Dispose();
         await _rig.DisposeAsync(); // PTT uit, rigctld stoppen
         _closingDone = true;
         Close();
@@ -360,9 +381,11 @@ public sealed class MainWindow : Window
 
     private async Task OpenSettingsAsync()
     {
-        var dialog = new SettingsWindow(_settings);
+        var dialog = new SettingsWindow(_settings, _midi);
         var saved = await dialog.ShowDialog<bool>(this);
         if (Math.Abs(_settings.UiScale - _scale) > 0.02) SetScale(_settings.UiScale, resizeWindow: true);
+        _ledMidi.IsOn = _midi?.IsOpen == true;
+        ToolTip.SetTip(_ledMidi, _midi?.OpenDevice is { } dev ? $"MIDI: {dev}" : "MIDI: geen apparaat");
         if (saved)
         {
             _settings.Save();
