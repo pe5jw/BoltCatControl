@@ -98,6 +98,31 @@ public class RigPollerTests
     }
 
     [Fact]
+    public async Task Leest_ptt_en_s_meter_om_de_beurt()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected && s.StrengthDb == -12);
+        await Task.Delay(400);
+        await poller.StopAsync();
+
+        int freq  = fake.Received.Count(l => l.Contains("get_freq"));
+        int ptt   = fake.Received.Count(l => l.Contains("get_ptt"));
+        int meter = fake.Received.Count(l => l.Contains("get_level"));
+        Assert.True(freq >= 4, $"freq={freq}");
+        Assert.InRange(ptt, freq / 2 - 1, freq / 2 + 2);
+        Assert.InRange(meter, freq / 2 - 1, freq / 2 + 1);
+
+        // PTT van de radio komt alsnog binnen
+        fake.Ptt = true;
+        poller.Start();
+        var s = await WaitFor(poller, s => s.Ptt);
+        Assert.True(s.Connected);
+    }
+
+    [Fact]
     public async Task Laat_hamlib_cache_standaard_ongemoeid()
     {
         await using var fake = new FakeRigctld();

@@ -25,8 +25,17 @@ public sealed class RigPoller : IAsyncDisposable
 
     public RigPoller(RigctldClient client) => _client = client;
 
-    /// <summary>Tijd tussen twee uitleesrondes.</summary>
+    /// <summary>Tijd van het begin van de ene uitleesronde tot de volgende.</summary>
     public TimeSpan Interval { get; set; } = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>Minimale pauze tussen rondes, zodat andere rigctld clients ook aan de beurt komen.</summary>
+    public TimeSpan MinPause { get; set; } = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>
+    /// PTT en S-meter om de beurt lezen (elk om de ronde), frequentie en mode elke ronde.
+    /// Scheelt bij trage radio's een kwart tot de helft van de rondetijd.
+    /// </summary>
+    public bool AlternatePttAndMeter { get; set; } = true;
 
     /// <summary>Wachttijd voor een nieuwe verbindingspoging.</summary>
     public TimeSpan ReconnectDelay { get; set; } = TimeSpan.FromSeconds(2);
@@ -113,12 +122,17 @@ public sealed class RigPoller : IAsyncDisposable
 
             try
             {
+                var started = Environment.TickCount64;
                 var cycle = Interlocked.Increment(ref _cycle);
                 var full = cycle <= 0 || cycle % Math.Max(1, SlowEvery) == 1 || SlowEvery <= 1;
-                Publish(await ReadAsync(full, ct).ConfigureAwait(false));
+                Publish(await ReadAsync(cycle, full, ct).ConfigureAwait(false));
                 if (_radioFailing) Notice?.Invoke("Radio reageert weer");
                 _radioFailing = false;
-                await Delay(Interval, ct).ConfigureAwait(false);
+                // Interval = tijd van ronde tot ronde: een trage radio (FT-897D ~300 ms per
+                // ronde) krijgt niet nog eens de volle wachttijd erbovenop.
+                var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+                var wait = Interval - elapsed;
+                await Delay(wait > MinPause ? wait : MinPause, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
             catch (RigctldException ex)
@@ -161,17 +175,21 @@ public sealed class RigPoller : IAsyncDisposable
         }
     }
 
-    private async Task<RigState> ReadAsync(bool full, CancellationToken ct)
+    private async Task<RigState> ReadAsync(long cycle, bool full, CancellationToken ct)
     {
         var prev = State;
         var vfoA = _client.VfoMode ? Vfo.A : Vfo.Current;
 
         var freqA = await _client.GetFrequencyAsync(vfoA, ct).ConfigureAwait(false);
         var (mode, pb) = await _client.GetModeAsync(vfoA, ct).ConfigureAwait(false);
-        var ptt = await _client.GetPttAsync(ct).ConfigureAwait(false);
+        // Om de beurt: even rondes PTT, oneven rondes S-meter (ronde 0 = direct na RefreshNow → PTT)
+        bool readPtt   = !AlternatePttAndMeter || cycle % 2 == 0 || full && cycle <= 1;
+        bool readMeter = !AlternatePttAndMeter || cycle % 2 != 0;
 
-        int? strength = null;
-        if (_strengthSupported)
+        var ptt = readPtt ? await _client.GetPttAsync(ct).ConfigureAwait(false) : prev.Ptt;
+
+        int? strength = readMeter ? null : prev.StrengthDb;
+        if (_strengthSupported && readMeter)
         {
             try
             {

@@ -16,6 +16,7 @@ string? rig = null, com = null, rigctldPath = null, listQuery = null;
 int? baud = null;
 int? cacheMs = null, intervalMs = null;
 bool list = false, debug = false;
+var confs = new List<string>();
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -34,6 +35,7 @@ for (int i = 0; i < args.Length; i++)
             case "--cache":    cacheMs = int.Parse(Next(), CultureInfo.InvariantCulture); break;
             case "--interval": intervalMs = int.Parse(Next(), CultureInfo.InvariantCulture); break;
             case "--debug":    debug = true; break;
+            case "--conf":     confs.Add(Next()); break;
             case "--list":
                 list = true;
                 if (i + 1 < args.Length && !args[i + 1].StartsWith('-')) listQuery = args[++i];
@@ -55,6 +57,8 @@ for (int i = 0; i < args.Length; i++)
                       --cache <ms>      Hamlib cache instellen (standaard niet wijzigen; rigctld staat op 1000)
                       --interval <ms>   hoe vaak de radio wordt uitgelezen (standaard 200)
                       --debug           rigctld met -vvvvv, alle seriele communicatie naar rigctld.log
+                      --conf <k=v>      Hamlib instelling (rigctld -C), bijv. --conf write_delay=0
+                                        (meerdere keren mogelijk; lijst: rigctld -m <model> -L)
                       --list [term]     radio's opzoeken, bijv. --list 897
 
                     Voorbeeld FT-897D:
@@ -114,6 +118,10 @@ if (list || rig is not null)
 RigctldProcess? rigctld = null;
 if (rig is not null)
 {
+    var extraArgs = new List<string>();
+    foreach (var c in confs) { extraArgs.Add("-C"); extraArgs.Add(c); }
+    if (debug) extraArgs.Add("-vvvvv");
+
     rigctld = new RigctldProcess(new RigctldOptions
     {
         Model = int.Parse(rig, CultureInfo.InvariantCulture),
@@ -123,7 +131,7 @@ if (rig is not null)
         TcpPort = port,
         VfoMode = vfoMode,
         Executable = rigctldPath,
-        ExtraArgs = debug ? new[] { "-vvvvv" } : Array.Empty<string>(),
+        ExtraArgs = extraArgs,
     });
 
     if (debug)
