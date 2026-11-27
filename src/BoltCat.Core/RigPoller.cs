@@ -20,15 +20,36 @@ public sealed class RigPoller : IAsyncDisposable
     private bool _splitSupported = true;
     private bool _strengthFailing;
     private bool _splitFailing;
+    private bool _radioFailing;
     private long _cycle;
 
     public RigPoller(RigctldClient client) => _client = client;
 
-    /// <summary>Tijd tussen twee uitleesrondes.</summary>
+    /// <summary>Tijd van het begin van de ene uitleesronde tot de volgende.</summary>
     public TimeSpan Interval { get; set; } = TimeSpan.FromMilliseconds(200);
+
+    /// <summary>Minimale pauze tussen rondes, zodat andere rigctld clients ook aan de beurt komen.</summary>
+    public TimeSpan MinPause { get; set; } = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>
+    /// PTT en S-meter om de beurt lezen (elk om de ronde), frequentie en mode elke ronde.
+    /// Scheelt bij trage radio's een kwart tot de helft van de rondetijd.
+    /// </summary>
+    public bool AlternatePttAndMeter { get; set; } = true;
 
     /// <summary>Wachttijd voor een nieuwe verbindingspoging.</summary>
     public TimeSpan ReconnectDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Hamlib cache timeout die na het verbinden wordt ingesteld. rigctld staat standaard
+    /// op 1000 ms (frequentie verandert dan ~1x per seconde). Lager is sneller, maar niet
+    /// elke radio kan dat bijhouden: een FT-897D geeft bij 100 ms timeouts (RPRT -5).
+    /// Null = niet wijzigen (standaard).
+    /// </summary>
+    public TimeSpan? CacheTimeout { get; set; }
+
+    /// <summary>Wachttijd na een fout van de radio (timeout) voor een nieuwe poging.</summary>
+    public TimeSpan RadioRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
 
     /// <summary>Split en VFO B worden elke zoveelste ronde gelezen (minder CAT verkeer).</summary>
     public int SlowEvery { get; set; } = 5;
@@ -86,7 +107,9 @@ public sealed class RigPoller : IAsyncDisposable
                     _splitSupported = true;
                     _strengthFailing = false;
                     _splitFailing = false;
+                    _radioFailing = false;
                     _cycle = 0;
+                    await ApplyCacheTimeoutAsync(ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
                 catch (Exception ex)
@@ -99,15 +122,33 @@ public sealed class RigPoller : IAsyncDisposable
 
             try
             {
+                var started = Environment.TickCount64;
                 var cycle = Interlocked.Increment(ref _cycle);
                 var full = cycle <= 0 || cycle % Math.Max(1, SlowEvery) == 1 || SlowEvery <= 1;
-                Publish(await ReadAsync(full, ct).ConfigureAwait(false));
-                await Delay(Interval, ct).ConfigureAwait(false);
+                Publish(await ReadAsync(cycle, full, ct).ConfigureAwait(false));
+                if (_radioFailing) Notice?.Invoke("Radio reageert weer");
+                _radioFailing = false;
+                // Interval = tijd van ronde tot ronde: een trage radio (FT-897D ~300 ms per
+                // ronde) krijgt niet nog eens de volle wachttijd erbovenop.
+                var elapsed = TimeSpan.FromMilliseconds(Environment.TickCount64 - started);
+                var wait = Interval - elapsed;
+                await Delay(wait > MinPause ? wait : MinPause, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (RigctldException ex)
+            {
+                // rigctld is er wel, maar de radio antwoordt niet of geeft een fout
+                // (timeout, uitgeschakeld, kabel los). Verbinding met rigctld blijft staan;
+                // laatste waarden vasthouden en het straks opnieuw proberen.
+                if (!_radioFailing)
+                    Notice?.Invoke($"Radio reageert niet: {ex.Message} — opnieuw proberen");
+                _radioFailing = true;
+                Publish(State with { Connected = true, Error = $"Radio reageert niet: {ex.Message}" });
+                await Delay(RadioRetryDelay, ct).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
-                // rigctld weg of radio reageert niet: opnieuw verbinden
+                // rigctld weg (TCP fout, antwoord uit de pas): opnieuw verbinden
                 Publish(RigState.Disconnected(ex.Message));
                 await _client.DisconnectAsync().ConfigureAwait(false);
                 await Delay(ReconnectDelay, ct).ConfigureAwait(false);
@@ -115,17 +156,40 @@ public sealed class RigPoller : IAsyncDisposable
         }
     }
 
-    private async Task<RigState> ReadAsync(bool full, CancellationToken ct)
+    private async Task ApplyCacheTimeoutAsync(CancellationToken ct)
+    {
+        if (CacheTimeout is not { } t) return;
+        var ms = (int)t.TotalMilliseconds;
+        try
+        {
+            var before = await _client.GetCacheTimeoutAsync(ct).ConfigureAwait(false);
+            if (before != ms)
+            {
+                await _client.SetCacheTimeoutAsync(ms, ct).ConfigureAwait(false);
+                Notice?.Invoke($"Hamlib cache {before} ms -> {ms} ms");
+            }
+        }
+        catch (RigctldException ex)
+        {
+            Notice?.Invoke($"Hamlib cache instellen niet ondersteund ({ex.Message})");
+        }
+    }
+
+    private async Task<RigState> ReadAsync(long cycle, bool full, CancellationToken ct)
     {
         var prev = State;
         var vfoA = _client.VfoMode ? Vfo.A : Vfo.Current;
 
         var freqA = await _client.GetFrequencyAsync(vfoA, ct).ConfigureAwait(false);
         var (mode, pb) = await _client.GetModeAsync(vfoA, ct).ConfigureAwait(false);
-        var ptt = await _client.GetPttAsync(ct).ConfigureAwait(false);
+        // Om de beurt: even rondes PTT, oneven rondes S-meter (ronde 0 = direct na RefreshNow → PTT)
+        bool readPtt   = !AlternatePttAndMeter || cycle % 2 == 0 || full && cycle <= 1;
+        bool readMeter = !AlternatePttAndMeter || cycle % 2 != 0;
 
-        int? strength = null;
-        if (_strengthSupported)
+        var ptt = readPtt ? await _client.GetPttAsync(ct).ConfigureAwait(false) : prev.Ptt;
+
+        int? strength = readMeter ? null : prev.StrengthDb;
+        if (_strengthSupported && readMeter)
         {
             try
             {

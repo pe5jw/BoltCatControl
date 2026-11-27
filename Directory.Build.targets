@@ -1,0 +1,23 @@
+<Project>
+  <!--
+    Meegeleverde Hamlib (rigctld + DLL's) in de map 'hamlib' naast de app.
+    Bron: hamlib\win-x64\ in de repo-root — niet in git, de CI haalt hem uit de
+    officiële Hamlib release. Lokaal: pak de Hamlib w64 zip uit en kopieer de
+    inhoud van 'bin' naar hamlib\win-x64\.
+    Linux gebruikt de rigctld van het systeem (sudo apt install libhamlib-utils).
+  -->
+  <PropertyGroup>
+    <_BoltHamlibWin>$(MSBuildThisFileDirectory)hamlib\win-x64\</_BoltHamlibWin>
+    <_BoltIsApp Condition="'$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe'">true</_BoltIsApp>
+    <_BoltWantsWinHamlib Condition="'$(RuntimeIdentifier)' == 'win-x64'">true</_BoltWantsWinHamlib>
+    <_BoltWantsWinHamlib Condition="'$(RuntimeIdentifier)' == '' and $([MSBuild]::IsOSPlatform('Windows'))">true</_BoltWantsWinHamlib>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(_BoltIsApp)' == 'true' and '$(IsTestProject)' != 'true' and '$(_BoltWantsWinHamlib)' == 'true'">
+    <None Include="$(_BoltHamlibWin)**\*"
+          LinkBase="hamlib"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          ExcludeFromSingleFile="true" />
+  </ItemGroup>
+</Project>

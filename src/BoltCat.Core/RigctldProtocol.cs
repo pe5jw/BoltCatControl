@@ -66,6 +66,20 @@ public static class RigctldProtocol
         return new RigctldResponse(code, values);
     }
 
+    /// <summary>
+    /// Hoort dit antwoord bij het verstuurde commando? De eerste regel is de echo
+    /// ("get_freq:" of "set_freq: 14074000"). Een kaal "RPRT n" zonder echo is ook goed.
+    /// </summary>
+    public static bool EchoMatches(string command, IReadOnlyList<string> lines)
+    {
+        if (lines.Count == 0) return false;
+        var first = lines[0].TrimEnd('\r');
+        if (lines.Count == 1 && first.StartsWith("RPRT", StringComparison.Ordinal)) return true;
+        var name = command.Split(' ', 2)[0];
+        return first.StartsWith(name + ":", StringComparison.Ordinal)
+            || first.Equals(name, StringComparison.Ordinal);
+    }
+
     /// <summary>VFO als rigctld argument (alleen gebruikt als rigctld met --vfo draait).</summary>
     public static string VfoName(Vfo vfo) => vfo switch
     {

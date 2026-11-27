@@ -112,6 +112,42 @@ public class RigctldClientTests
     }
 
     [Fact]
+    public async Task Cache_timeout()
+    {
+        var (fake, client) = await Connect();
+        await using var _f = fake; await using var _c = client;
+
+        Assert.Equal(1000, await client.GetCacheTimeoutAsync());
+        await client.SetCacheTimeoutAsync(100);
+        Assert.Equal(100, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Antwoord_uit_de_pas_verbreekt_en_herstelt()
+    {
+        var (fake, client) = await Connect();
+        await using var _f = fake; await using var _c = client;
+
+        fake.WrongAnswerOnce = true;
+        await Assert.ThrowsAsync<IOException>(() => client.GetFrequencyAsync());
+        Assert.False(client.IsConnected);
+
+        await client.ConnectAsync();
+        Assert.Equal(14_074_000, await client.GetFrequencyAsync());
+    }
+
+    [Theory]
+    [InlineData("get_freq", "get_freq:", true)]
+    [InlineData("get_freq VFOA", "get_freq: VFOA", true)]
+    [InlineData("set_freq 7074000", "set_freq: 7074000", true)]
+    [InlineData("get_level STRENGTH", "RPRT -11", true)]
+    [InlineData("get_freq", "get_split_vfo:", false)]
+    [InlineData("get_freq", "Frequency: 7074000", false)]
+    public void Echo_controle(string command, string firstLine, bool ok) =>
+        Assert.Equal(ok, RigctldProtocol.EchoMatches(command,
+            firstLine.StartsWith("RPRT") ? new List<string> { firstLine } : new List<string> { firstLine, "RPRT 0" }));
+
+    [Fact]
     public async Task Geen_rigctld_geeft_fout_bij_verbinden()
     {
         int port;

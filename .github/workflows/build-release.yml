@@ -52,10 +52,44 @@ jobs:
             echo "version=0.1.0-ci.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Hamlib (rigctld) ──────────────────────────────────────────────
+      # Windows: officiële Hamlib w64 zip uit de nieuwste Hamlib release,
+      # inhoud van bin\ → hamlib\win-x64\ (wordt meegeleverd in de zips).
+      - name: Hamlib ophalen (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo Hamlib/Hamlib --pattern 'hamlib-w64-*.zip' --dir hamlib-dl
+          $zip = Get-ChildItem hamlib-dl -Filter *.zip | Select-Object -First 1
+          if (-not $zip) { throw "Geen hamlib-w64 zip gevonden in de Hamlib release" }
+          Expand-Archive $zip.FullName -DestinationPath hamlib-dl/x
+          $root = Get-ChildItem hamlib-dl/x -Directory | Select-Object -First 1
+          $dst = New-Item -ItemType Directory -Force hamlib/win-x64
+          Copy-Item "$($root.FullName)/bin/rigctld.exe", "$($root.FullName)/bin/rigctl.exe" $dst
+          Copy-Item "$($root.FullName)/bin/*.dll" $dst
+          # Licentie en readme meeleveren (Hamlib is LGPL)
+          Get-ChildItem $root.FullName -Recurse -File | Where-Object { $_.Name -match '^(COPYING|LICENSE|README)' } | Copy-Item -Destination $dst
+          if (-not (Test-Path "$dst/rigctld.exe")) { throw "rigctld.exe ontbreekt" }
+          & "$dst/rigctld.exe" --version
+          "BOLTCAT_RIGCTLD=$((Resolve-Path "$dst/rigctld.exe").Path)" >> $env:GITHUB_ENV
+          "Hamlib: $($zip.Name)" >> $env:GITHUB_STEP_SUMMARY
+
+      # Linux: rigctld van het systeem (alleen voor de integratietests)
+      - name: Hamlib installeren (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libhamlib-utils
+          rigctld --version
+
       - name: Build
         run: dotnet build BoltCatControl.slnx -c Release
 
       - name: Tests
+        env:
+          BOLTCAT_REQUIRE_RIGCTLD: "1"   # integratietest met echte rigctld is verplicht in CI
         run: dotnet test BoltCatControl.slnx -c Release --no-build --logger "console;verbosity=normal"
 
       - name: Publish ${{ matrix.rid }}
@@ -76,7 +110,9 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path out/BoltCatControl -DestinationPath "BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
-          Compress-Archive -Path out/BoltCat.Test/BoltCat.Test.exe -DestinationPath "BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
+          if (-not (Test-Path out/BoltCatControl/hamlib/rigctld.exe)) { throw "hamlib/rigctld.exe ontbreekt in BoltCatControl" }
+          if (-not (Test-Path out/BoltCat.Test/hamlib/rigctld.exe))  { throw "hamlib/rigctld.exe ontbreekt in BoltCat.Test" }
+          Compress-Archive -Path out/BoltCat.Test -DestinationPath "BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
 
       - name: Zippen (Linux, met execute-bit)
         if: runner.os == 'Linux'
@@ -84,7 +120,7 @@ jobs:
           chmod +x out/BoltCatControl/BoltCatControl out/BoltCat.Test/BoltCat.Test
           cd out
           zip -qr "../BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCatControl
-          zip -qj "../BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCat.Test/BoltCat.Test
+          zip -qr "../BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCat.Test
 
       - uses: actions/upload-artifact@v4
         with:

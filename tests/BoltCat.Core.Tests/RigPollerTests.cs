@@ -98,6 +98,99 @@ public class RigPollerTests
     }
 
     [Fact]
+    public async Task Leest_ptt_en_s_meter_om_de_beurt()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected && s.StrengthDb == -12);
+
+        // Wachten op genoeg rondes (niet op een vaste tijd: CI runners zijn soms traag)
+        var deadline = DateTime.UtcNow + Wait;
+        while (fake.Received.Count(l => l.Contains("get_freq")) < 10 && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
+        await poller.StopAsync();
+
+        int freq  = fake.Received.Count(l => l.Contains("get_freq"));
+        int ptt   = fake.Received.Count(l => l.Contains("get_ptt"));
+        int meter = fake.Received.Count(l => l.Contains("get_level"));
+        Assert.True(freq >= 10, $"freq={freq}");
+        Assert.InRange(ptt, freq / 2 - 1, freq / 2 + 2);
+        Assert.InRange(meter, freq / 2 - 1, freq / 2 + 1);
+
+        // PTT van de radio komt alsnog binnen
+        fake.Ptt = true;
+        poller.Start();
+        var s = await WaitFor(poller, s => s.Ptt);
+        Assert.True(s.Connected);
+    }
+
+    [Fact]
+    public async Task Laat_hamlib_cache_standaard_ongemoeid()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+        Assert.Equal(1000, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Zet_hamlib_cache_als_ingesteld()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.CacheTimeout = TimeSpan.FromMilliseconds(300);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+        Assert.Equal(300, fake.CacheMs);
+    }
+
+    [Fact]
+    public async Task Radio_timeout_verbreekt_rigctld_niet()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.RadioRetryDelay = TimeSpan.FromMilliseconds(50);
+        var notices = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        poller.Notice += notices.Enqueue;
+        poller.Start();
+        await WaitFor(poller, s => s.Connected && s.FrequencyA == 14_074_000);
+
+        fake.FreqCode = -5; // radio reageert niet
+        var failing = await WaitFor(poller, s => s.Error is not null);
+        Assert.True(failing.Connected);                 // rigctld nog verbonden
+        Assert.Equal(14_074_000, failing.FrequencyA);   // laatste waarde blijft
+        Assert.True(client.IsConnected);
+
+        fake.FreqCode = 0;
+        fake.FreqA = 18_100_000;
+        var ok = await WaitFor(poller, s => s.Error is null && s.FrequencyA == 18_100_000);
+        Assert.True(ok.Connected);
+        Assert.Single(notices, n => n.StartsWith("Radio reageert niet"));
+        Assert.Contains(notices, n => n == "Radio reageert weer");
+    }
+
+    [Fact]
+    public async Task Herstelt_na_antwoord_uit_de_pas()
+    {
+        await using var fake = new FakeRigctld();
+        await using var client = new RigctldClient("127.0.0.1", fake.Port) { Timeout = TimeSpan.FromMilliseconds(500) };
+        await using var poller = NewPoller(client);
+        poller.Start();
+        await WaitFor(poller, s => s.Connected);
+
+        fake.WrongAnswerOnce = true;
+        fake.FreqA = 10_136_000;
+        var s = await WaitFor(poller, s => s.Connected && s.FrequencyA == 10_136_000);
+        Assert.Equal(-12, s.StrengthDb); // S-meter niet ten onrechte uitgezet
+    }
+
+    [Fact]
     public async Task Verbindt_opnieuw_na_wegvallen()
     {
         await using var fake = new FakeRigctld();
