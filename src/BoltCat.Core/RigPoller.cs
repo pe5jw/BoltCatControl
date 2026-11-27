@@ -21,6 +21,8 @@ public sealed class RigPoller : IAsyncDisposable
     private bool _strengthFailing;
     private bool _splitFailing;
     private bool _radioFailing;
+    private int? _effectiveCacheMs;
+    private readonly Queue<long> _recentTimeouts = new();
     private long _cycle;
 
     public RigPoller(RigctldClient client) => _client = client;
@@ -47,6 +49,17 @@ public sealed class RigPoller : IAsyncDisposable
     /// Null = niet wijzigen (standaard).
     /// </summary>
     public TimeSpan? CacheTimeout { get; set; }
+
+    /// <summary>
+    /// Cache automatisch verhogen (100 → 200 → 500 → 1000 ms) als de radio herhaaldelijk
+    /// niet op tijd antwoordt: 3 timeouts binnen 30 s. Werkt alleen met <see cref="CacheTimeout"/>.
+    /// </summary>
+    public bool AdaptiveCache { get; set; } = true;
+
+    /// <summary>De cache die nu werkelijk is ingesteld (na eventuele automatische verhoging).</summary>
+    public int? CurrentCacheMs => _effectiveCacheMs;
+
+    private static readonly int[] CacheSteps = [100, 200, 500, 1000];
 
     /// <summary>Wachttijd na een fout van de radio (timeout) voor een nieuwe poging.</summary>
     public TimeSpan RadioRetryDelay { get; set; } = TimeSpan.FromSeconds(1);
@@ -143,6 +156,7 @@ public sealed class RigPoller : IAsyncDisposable
                 if (!_radioFailing)
                     Notice?.Invoke($"Radio reageert niet: {ex.Message} — opnieuw proberen");
                 _radioFailing = true;
+                await OnRadioErrorAsync(ex, ct).ConfigureAwait(false);
                 Publish(State with { Connected = true, Error = $"Radio reageert niet: {ex.Message}" });
                 await Delay(RadioRetryDelay, ct).ConfigureAwait(false);
             }
@@ -156,10 +170,33 @@ public sealed class RigPoller : IAsyncDisposable
         }
     }
 
+    /// <summary>Timeout van de radio bijhouden; bij 3 binnen 30 s de cache een stap omhoog.</summary>
+    private async Task OnRadioErrorAsync(RigctldException ex, CancellationToken ct)
+    {
+        if (ex.Code != -5 || !AdaptiveCache || _effectiveCacheMs is not { } current) return;
+
+        var now = Environment.TickCount64;
+        _recentTimeouts.Enqueue(now);
+        while (_recentTimeouts.Count > 0 && now - _recentTimeouts.Peek() > 30_000) _recentTimeouts.Dequeue();
+        if (_recentTimeouts.Count < 3) return;
+
+        var next = CacheSteps.FirstOrDefault(step => step > current);
+        if (next == 0) return; // al op de hoogste stap
+        _recentTimeouts.Clear();
+        try
+        {
+            await _client.SetCacheTimeoutAsync(next, ct).ConfigureAwait(false);
+            _effectiveCacheMs = next;
+            Notice?.Invoke($"Radio is traag (herhaalde timeouts): Hamlib cache {current} ms -> {next} ms");
+        }
+        catch (RigctldException) { /* volgende keer opnieuw */ }
+    }
+
     private async Task ApplyCacheTimeoutAsync(CancellationToken ct)
     {
         if (CacheTimeout is not { } t) return;
-        var ms = (int)t.TotalMilliseconds;
+        // Na een automatische verhoging die waarde aanhouden, ook na opnieuw verbinden
+        var ms = _effectiveCacheMs ?? (int)t.TotalMilliseconds;
         try
         {
             var before = await _client.GetCacheTimeoutAsync(ct).ConfigureAwait(false);
@@ -168,6 +205,7 @@ public sealed class RigPoller : IAsyncDisposable
                 await _client.SetCacheTimeoutAsync(ms, ct).ConfigureAwait(false);
                 Notice?.Invoke($"Hamlib cache {before} ms -> {ms} ms");
             }
+            _effectiveCacheMs = ms;
         }
         catch (RigctldException ex)
         {
@@ -208,6 +246,7 @@ public sealed class RigPoller : IAsyncDisposable
                 strength = prev.StrengthDb;
                 if (!_strengthFailing) Notice?.Invoke($"S-meter lezen mislukt, probeer opnieuw: {ex.Message}");
                 _strengthFailing = true;
+                await OnRadioErrorAsync(ex, ct).ConfigureAwait(false);
             }
         }
 

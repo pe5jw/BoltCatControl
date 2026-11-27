@@ -34,6 +34,7 @@ src/
   BoltCatControl/    Avalonia desktop app
 tests/
   BoltCat.Core.Tests/  tests met een nep-rigctld (draaien in GitHub Actions)
+  BoltCatControl.UiTests/  GUI headless renderen → screenshots (CI artifact)
 tools/
   BoltCat.Test/        console testprogramma voor een echte radio
 ```
@@ -84,8 +85,9 @@ git push origin v0.1.0
 - [x] Project setup
 - [x] `BoltCat.Core` — `RigctldClient`, `RigState`, `RigPoller`
 - [x] rigctld auto-start (meegeleverd voor Windows, systeem-rigctld op Linux)
-- [ ] MVP GUI — VFO A/B, mode, PTT, A↔B / A→B / Split, band, S-meter, status
-- [ ] JSON configuratie — COM poort, baud, Hamlib rig model, MIDI
+- [x] MVP GUI — VFO A/B, mode, PTT, A↔B / A→B / Split, band, S-meter, status
+- [x] JSON configuratie — radio, COM poort, baud, cache, band-geheugen, thema
+- [ ] MIDI configuratie
 - [ ] MIDI fase 1 — VFO encoder + PTT
 
 73 de PE5JW

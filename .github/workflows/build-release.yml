@@ -90,7 +90,16 @@ jobs:
       - name: Tests
         env:
           BOLTCAT_REQUIRE_RIGCTLD: "1"   # integratietest met echte rigctld is verplicht in CI
+          BOLTCAT_SCREENSHOT_DIR: ${{ github.workspace }}/screenshots
         run: dotnet test BoltCatControl.slnx -c Release --no-build --logger "console;verbosity=normal"
+
+      # GUI screenshots (headless gerenderd) om de layout te bekijken
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ matrix.rid }}
+          path: screenshots/*.png
+          if-no-files-found: ignore
 
       - name: Publish ${{ matrix.rid }}
         run: >
