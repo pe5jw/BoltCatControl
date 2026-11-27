@@ -100,6 +100,16 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Hamlib_ontbreekt_balk()
+    {
+        var w = Open(Ft897(), RigState.Disconnected());
+        w.ShowSetup("Hamlib (rigctld) ontbreekt op dit systeem. BoltCatControl heeft het nodig om met de radio te praten.",
+            "Hamlib installeren", () => Task.CompletedTask, "sudo apt-get install -y libhamlib-utils");
+        Capture(w, "4b-hamlib-ontbreekt");
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Niet_verbonden()
     {
         var w = Open(Ft897(), RigState.Disconnected("rigctld stopte direct (exit code 2). Klopt de COM poort, de baudrate en het model?"));
