@@ -90,6 +90,18 @@ dotnet publish src/BoltCatControl -r win-x64   --self-contained -c Release -o ou
 dotnet publish src/BoltCatControl -r linux-x64 --self-contained -c Release -o out/linux-x64
 ```
 
+## Downloaden
+
+De nieuwste build van `main` staat altijd in de pre-release
+[latest](https://github.com/pe5jw/BoltCatControl/releases/tag/latest), zonder inloggen:
+
+```
+wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-linux-x64.zip
+wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-win-x64.zip
+```
+
+Linux: `sudo apt install libhamlib-utils` voor rigctld. Windows: Hamlib zit erbij.
+
 ## Releases
 
 Elke push naar `main` wordt door GitHub Actions gebouwd voor Windows en Linux.

@@ -165,3 +165,47 @@ jobs:
             || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
                  --title "BoltCatControl $GITHUB_REF_NAME" --generate-notes
           gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber BoltCat*.zip
+
+  # Elke push naar main: pre-release "latest" bijwerken met vaste bestandsnamen,
+  # zodat de nieuwste build altijd zonder inloggen te downloaden is (ook met wget):
+  #   https://github.com/<repo>/releases/download/latest/BoltCatControl-linux-x64.zip
+  latest:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-x64'
+          merge-multiple: true
+
+      - name: Vaste namen (zonder versie)
+        run: |
+          for f in BoltCat*.zip; do
+            # BoltCatControl-0.1.0-ci.42-linux-x64.zip -> BoltCatControl-linux-x64.zip
+            name=$(echo "$f" | sed -E 's/^(BoltCatControl|BoltCat\.Test)-.*-(win-x64|linux-x64)\.zip$/\1-\2.zip/')
+            [ "$f" != "$name" ] && mv "$f" "$name"
+          done
+          ls -la *.zip
+
+      - name: Pre-release latest bijwerken
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          short=${GITHUB_SHA::7}
+          notes="Automatische build van main ($short, $(date -u '+%Y-%m-%d %H:%M') UTC).
+
+          Downloaden zonder inloggen, bijvoorbeeld op Linux:
+              wget https://github.com/$GITHUB_REPOSITORY/releases/download/latest/BoltCatControl-linux-x64.zip
+
+          Linux: rigctld installeren met  sudo apt install libhamlib-utils
+          Windows: rigctld (Hamlib) zit al in de map hamlib."
+          if gh release view latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # tag naar de nieuwe commit verplaatsen
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/latest" -f sha="$GITHUB_SHA" -F force=true >/dev/null
+            gh release edit latest --repo "$GITHUB_REPOSITORY" --prerelease --title "BoltCatControl latest ($short)" --notes "$notes"
+          else
+            gh release create latest --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease \
+              --title "BoltCatControl latest ($short)" --notes "$notes"
+          fi
+          gh release upload latest --repo "$GITHUB_REPOSITORY" --clobber BoltCat*.zip
