@@ -117,6 +117,14 @@ public class MidiTests
         return (fake, rig, midi, input);
     }
 
+    /// <summary>Wachten tot de app om linksom draaien vraagt (zoals de gebruiker op het scherm ziet).</summary>
+    private static Task WaitForLeftPrompt(MidiController midi)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        midi.LearnProgress += p => { if (p.Contains("LINKSOM")) tcs.TrySetResult(); };
+        return tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
     private static async Task Until(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
@@ -183,9 +191,10 @@ public class MidiTests
 
         var finished = new TaskCompletionSource<MidiSettings?>();
         midi.LearnFinished += (s, _) => finished.TrySetResult(s);
+        var leftPrompt = WaitForLeftPrompt(midi);
         midi.LearnVfo();
         for (int i = 0; i < 4; i++) { input.Send(MidiKind.ControlChange, 64, 66); input.Send(MidiKind.ControlChange, 65, 1); await Task.Delay(30); }
-        await Task.Delay(1000);
+        await leftPrompt;
         for (int i = 0; i < 4; i++) { input.Send(MidiKind.ControlChange, 64, 64); input.Send(MidiKind.ControlChange, 65, 127); await Task.Delay(30); }
         var learned = await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
         Assert.Equal(new MidiControl(MidiKind.ControlChange, 1, 64), learned!.Vfo);
@@ -220,9 +229,10 @@ public class MidiTests
         var finished = new TaskCompletionSource<(MidiSettings? s, string msg)>();
         midi.LearnFinished += (s, msg) => finished.TrySetResult((s, msg));
 
+        var leftPrompt = WaitForLeftPrompt(midi);
         midi.LearnVfo();
         foreach (var v in new[] { 66, 66, 67, 66 }) { input.Send(MidiKind.ControlChange, 21, v); await Task.Delay(30); }
-        await Task.Delay(1000);                       // knop staat stil → linksom
+        await leftPrompt;                             // knop staat stil → app vraagt linksom
         foreach (var v in new[] { 64, 64, 63, 64 }) { input.Send(MidiKind.ControlChange, 21, v); await Task.Delay(30); }
 
         var (learned, message) = await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
