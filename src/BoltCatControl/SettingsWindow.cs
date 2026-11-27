@@ -262,6 +262,7 @@ public sealed class SettingsWindow : Window
             CornerRadius = Ui.Radius,
             Padding = new Thickness(8, 6),
             MinHeight = 96,
+            Width = 380,
             Child = _midiMonitor,
         }.Themed(Border.BackgroundProperty, BoltTheme.Keys.BgInput)
          .Themed(Border.BorderBrushProperty, BoltTheme.Keys.Border);
