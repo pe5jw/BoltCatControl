@@ -69,6 +69,7 @@ public class ScreenshotTests
         {
             Connected = true, FrequencyA = 14_236_000, Mode = "USB", Passband = 0, StrengthDb = -12,
         });
+        w.ShowNoticeForTest("Hamlib cache 1000 ms -> 100 ms");
         Capture(w, "1-ontvangen-20m");
         w.Close();
     }
@@ -121,6 +122,15 @@ public class ScreenshotTests
     {
         var w = new SettingsWindow(Ft897());
         w.Show();
+
+        // Wachten tot de radiolijst (rigctld -l) geladen is
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(15);
+        while (!w.ModelsLoaded.IsCompleted && DateTime.UtcNow < deadline)
+        {
+            Dispatcher.UIThread.RunJobs();
+            Thread.Sleep(50);
+        }
+        w.SearchForTest("897");
         Capture(w, "6-instellingen");
         w.Close();
     }

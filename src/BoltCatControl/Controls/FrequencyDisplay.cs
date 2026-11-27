@@ -83,6 +83,7 @@ public sealed class FrequencyDisplay : StackPanel
             _digits[i] = tb;
             Children.Add(tb);
         }
+        Render(); // begintoestand: gedimde streepjes
     }
 
     private static string Step(long power) => power switch

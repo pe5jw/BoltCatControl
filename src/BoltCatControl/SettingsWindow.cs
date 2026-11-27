@@ -40,13 +40,20 @@ public sealed class SettingsWindow : Window
     private readonly CheckBox _vfoMode;
     private readonly CheckBox _autoConnect;
     private readonly TextBlock _error;
+    private readonly TaskCompletionSource _modelsLoaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>Klaar met het laden van de radiolijst (voor de screenshot-test).</summary>
+    public Task ModelsLoaded => _modelsLoaded.Task;
+
+    /// <summary>Zoekterm invullen (voor de screenshot-test).</summary>
+    public void SearchForTest(string text) => _search.Text = text;
 
     public SettingsWindow(AppSettings settings)
     {
         _settings = settings;
         Title = "BoltCatControl — instellingen";
         Width = 560;
-        Height = 680;
+        Height = 760;
         MinWidth = 480;
         MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -54,7 +61,9 @@ public sealed class SettingsWindow : Window
 
         // ── Radio ─────────────────────────────────────────────────────────
         _search = new TextBox { Watermark = "Zoek je radio: ft-897d, ft-950, ic-7300, 1043 …" };
-        _results = new ListBox { Height = 170, FontFamily = Ui.Mono, FontSize = 12 };
+        _results = new ListBox { Height = 170, FontFamily = Ui.Mono, FontSize = 12, BorderThickness = new Thickness(1), CornerRadius = Ui.Radius }
+            .Themed(ListBox.BackgroundProperty, BoltTheme.Keys.BgInput)
+            .Themed(ListBox.BorderBrushProperty, BoltTheme.Keys.Border);
         _selectedText = Ui.MonoText(settings.RigModel > 0 ? $"{settings.RigModel}  {settings.RigName}" : "nog geen radio gekozen", 13, BoltTheme.Keys.Accent);
         _modelsStatus = new TextBlock { FontSize = 11 }.Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.TextDim);
 
@@ -163,6 +172,12 @@ public sealed class SettingsWindow : Window
     }
 
     private async Task LoadModelsAsync()
+    {
+        try { await LoadModelsCoreAsync(); }
+        finally { _modelsLoaded.TrySetResult(); }
+    }
+
+    private async Task LoadModelsCoreAsync()
     {
         var exe = RigctldProcess.FindExecutable(_settings.RigctldPath);
         if (exe is null)

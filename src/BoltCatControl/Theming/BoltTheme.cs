@@ -53,6 +53,22 @@ public sealed record BoltTheme(
         Set("ComboBoxBorderBrush", Border);
         Set("ComboBoxForeground", Text);
         Set("ComboBoxDropDownBackground", BgPanel);
+        Set("TextControlBackground", BgInput);
+        Set("TextControlBackgroundPointerOver", BgInput);
+        Set("TextControlBackgroundFocused", BgInput);
+        Set("TextControlBorderBrush", Border);
+        Set("TextControlForeground", Text);
+        Set("TextControlForegroundFocused", Text);
+
+        // Fluent accent (vinkjes, focus, selectie) = Bolt accent i.p.v. Windows-blauw
+        void SetColor(string key, string hex) => app.Resources[key] = Color.Parse(hex);
+        SetColor("SystemAccentColor", Accent);
+        SetColor("SystemAccentColorLight1", Accent);
+        SetColor("SystemAccentColorLight2", Accent);
+        SetColor("SystemAccentColorLight3", Accent);
+        SetColor("SystemAccentColorDark1", AccentDim);
+        SetColor("SystemAccentColorDark2", AccentDim);
+        SetColor("SystemAccentColorDark3", AccentDim);
     }
 }
 

@@ -73,9 +73,9 @@ public sealed class MainWindow : Window
 
         Title     = $"BoltCatControl {_version}";
         Width     = 920;
-        Height    = 600;
+        Height    = 545;
         MinWidth  = 780;
-        MinHeight = 540;
+        MinHeight = 520;
         this.Themed(BackgroundProperty, BoltTheme.Keys.BgDeep);
 
         // ── Header ────────────────────────────────────────────────────────
@@ -177,6 +177,7 @@ public sealed class MainWindow : Window
         var vfoPanel = Ui.Panel(new StackPanel
         {
             Spacing = 6,
+            VerticalAlignment = VerticalAlignment.Center,
             Children =
             {
                 Ui.Row([vfoALabel, _modeText, _splitBadge], [_bandText]),
@@ -262,6 +263,7 @@ public sealed class MainWindow : Window
         var status = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto") };
         _pillRig.Margin = new Thickness(6, 0);
         _pillNotice.Margin = new Thickness(0, 0, 6, 0);
+        _pillNotice.IsVisible = false;
         Grid.SetColumn(_pillRig, 1);
         Grid.SetColumn(_pillNotice, 2);
         Grid.SetColumn(_pillVersion, 3);
@@ -385,7 +387,14 @@ public sealed class MainWindow : Window
 
     // ── Toestand tonen ────────────────────────────────────────────────────
 
-    private void ShowNotice(string text) => _pillNotice.Text = $"{DateTime.Now:HH:mm:ss}  {text}";
+    private void ShowNotice(string text)
+    {
+        _pillNotice.Text = $"{DateTime.Now:HH:mm:ss}  {text}";
+        _pillNotice.IsVisible = true;
+    }
+
+    /// <summary>Melding tonen (ook gebruikt door de screenshot-test).</summary>
+    public void ShowNoticeForTest(string text) => ShowNotice(text);
 
     /// <summary>Toestand van de radio op het scherm zetten (ook gebruikt door de screenshot-test).</summary>
     public void ApplyState(RigState s)
