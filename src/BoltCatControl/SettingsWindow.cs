@@ -3,7 +3,9 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using BoltCat.Core;
+using BoltCat.Core.Midi;
 using BoltCatControl.Theming;
 
 namespace BoltCatControl;
@@ -50,9 +52,30 @@ public sealed class SettingsWindow : Window
     /// <summary>Zoekterm invullen (voor de screenshot-test).</summary>
     public void SearchForTest(string text) => _search.Text = text;
 
-    public SettingsWindow(AppSettings settings)
+    // MIDI: werkkopie, pas bij Opslaan definitief; bij Annuleren terug naar de oude
+    private readonly MidiController? _midi;
+    private MidiSettings _midiWork;
+    private bool _saved;
+    private ComboBox _midiDevice = null!;
+    private TextBlock _midiVfoText = null!, _midiPttText = null!, _midiLearnText = null!, _midiMonitor = null!;
+    private ComboBox _midiEncoder = null!, _midiPttMode = null!;
+    private CheckBox _midiInvert = null!;
+    private readonly Queue<string> _monitorLines = new();
+    private bool _updatingMidiUi;
+
+    private static readonly (string Label, EncoderSettings Enc)[] EncoderChoices =
+    [
+        ("rond 64 (63 / 65)", new(EncoderMode.Offset, 64)),
+        ("rond 65 (64 / 66)", new(EncoderMode.Offset, 65)),
+        ("1 / 127 (two's complement)", new(EncoderMode.TwosComplement)),
+        ("1 / 65 (signed bit)", new(EncoderMode.SignedBit)),
+    ];
+
+    public SettingsWindow(AppSettings settings, MidiController? midi = null)
     {
         _settings = settings;
+        _midi = midi;
+        _midiWork = settings.Midi.Clone();
         Title = "BoltCatControl — instellingen";
         Width = 560;
         Height = 820;
@@ -158,7 +181,7 @@ public sealed class SettingsWindow : Window
             {
                 Margin = new Thickness(14),
                 Spacing = 10,
-                Children = { radio, connection, view, advanced, _error, Ui.Row([], [cancel, save]) },
+                Children = { radio, connection, BuildMidiPanel(), view, advanced, _error, Ui.Row([], [cancel, save]) },
             },
         };
 
@@ -184,6 +207,149 @@ public sealed class SettingsWindow : Window
             .Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.TextDim);
         return new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { l, control } };
     }
+
+    // ── MIDI ──────────────────────────────────────────────────────────────
+
+    private Control BuildMidiPanel()
+    {
+        _midiDevice = new ComboBox { MinWidth = 260 };
+        var refresh = Ui.Button("Vernieuwen", () => { FillMidiDevices(); return Task.CompletedTask; }, small: true);
+        FillMidiDevices();
+        _midiDevice.SelectionChanged += (_, _) =>
+        {
+            if (_updatingMidiUi) return;
+            _midiWork.Device = _midiDevice.SelectedIndex <= 0 ? null : _midiDevice.SelectedItem as string;
+            ApplyMidiWork();
+        };
+
+        _midiVfoText = Ui.MonoText("", 12, BoltTheme.Keys.Accent);
+        _midiVfoText.VerticalAlignment = VerticalAlignment.Center;
+        var learnVfo = Ui.Button("Leer VFO-knop", () => { _midi?.LearnVfo(); return Task.CompletedTask; }, small: true);
+
+        _midiEncoder = new ComboBox { MinWidth = 220, ItemsSource = EncoderChoices.Select(c => c.Label).ToList() };
+        _midiEncoder.SelectionChanged += (_, _) =>
+        {
+            if (_updatingMidiUi || _midiEncoder.SelectedIndex < 0) return;
+            _midiWork.Encoder = EncoderChoices[_midiEncoder.SelectedIndex].Enc with { Invert = _midiInvert.IsChecked == true };
+            ApplyMidiWork();
+        };
+        _midiInvert = new CheckBox { Content = "Richting omdraaien" }.Themed(CheckBox.ForegroundProperty, BoltTheme.Keys.Text);
+        _midiInvert.IsCheckedChanged += (_, _) =>
+        {
+            if (_updatingMidiUi) return;
+            _midiWork.Encoder = _midiWork.Encoder with { Invert = _midiInvert.IsChecked == true };
+            ApplyMidiWork();
+        };
+
+        _midiPttText = Ui.MonoText("", 12, BoltTheme.Keys.Accent);
+        _midiPttText.VerticalAlignment = VerticalAlignment.Center;
+        var learnPtt = Ui.Button("Leer PTT-knop", () => { _midi?.LearnPtt(); return Task.CompletedTask; }, small: true);
+        _midiPttMode = new ComboBox { MinWidth = 220, ItemsSource = new[] { "Vasthouden = zenden", "Druk aan / druk uit" } };
+        _midiPttMode.SelectionChanged += (_, _) =>
+        {
+            if (_updatingMidiUi) return;
+            _midiWork.PttMode = _midiPttMode.SelectedIndex == 1 ? PttMode.Toggle : PttMode.Hold;
+            ApplyMidiWork();
+        };
+
+        _midiLearnText = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap }
+            .Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.Rx);
+
+        _midiMonitor = Ui.MonoText("(nog niets ontvangen)", 11, BoltTheme.Keys.TextDim);
+        var monitor = new Border
+        {
+            BorderThickness = new Thickness(1),
+            CornerRadius = Ui.Radius,
+            Padding = new Thickness(8, 6),
+            MinHeight = 96,
+            Child = _midiMonitor,
+        }.Themed(Border.BackgroundProperty, BoltTheme.Keys.BgInput)
+         .Themed(Border.BorderBrushProperty, BoltTheme.Keys.Border);
+
+        if (_midi is not null)
+        {
+            _midi.MessageReceived += OnMidiMessage;
+            _midi.LearnProgress += OnLearnProgress;
+            _midi.LearnFinished += OnLearnFinished;
+            Closed += (_, _) =>
+            {
+                _midi.MessageReceived -= OnMidiMessage;
+                _midi.LearnProgress -= OnLearnProgress;
+                _midi.LearnFinished -= OnLearnFinished;
+                _midi.CancelLearn();
+                if (!_saved) _midi.Apply(_settings.Midi); // annuleren: oude instellingen terug
+            };
+        }
+        UpdateMidiUi();
+
+        return Ui.Panel(new StackPanel
+        {
+            Spacing = 8,
+            Children =
+            {
+                Ui.SectionLabel("MIDI"),
+                Labeled("Apparaat", new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Children = { _midiDevice, refresh } }),
+                Labeled("VFO-knop", new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { learnVfo, _midiVfoText } }),
+                Labeled("Encoder", new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _midiEncoder, _midiInvert } }),
+                Hint("Elke klik = de stap uit het hoofdvenster (10 Hz / 100 Hz / 1 kHz). Sneller draaien = grotere sprong als je controller dat doorgeeft."),
+                Labeled("PTT-knop", new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { learnPtt, _midiPttText } }),
+                Labeled("PTT", _midiPttMode),
+                _midiLearnText,
+                Labeled("Monitor", monitor),
+                Hint("Toont live wat de controller stuurt, handig om te zien welke waarden een knop geeft."),
+            },
+        });
+    }
+
+    private void FillMidiDevices()
+    {
+        var names = new List<string> { "(geen)" };
+        names.AddRange(MidiDevices.List());
+        if (_midiWork.Device is { } d && !names.Contains(d)) names.Add(d);
+        _updatingMidiUi = true;
+        _midiDevice.ItemsSource = names;
+        _midiDevice.SelectedItem = _midiWork.Device is { } dev && names.Contains(dev) ? dev : names[0];
+        _updatingMidiUi = false;
+    }
+
+    private void ApplyMidiWork()
+    {
+        if (_midi is null) return;
+        var error = _midi.Apply(_midiWork);
+        _midiLearnText.Text = error ?? (_midi.IsOpen ? $"Verbonden met {_midi.OpenDevice}" : "");
+        UpdateMidiUi();
+    }
+
+    private void UpdateMidiUi()
+    {
+        _updatingMidiUi = true;
+        _midiVfoText.Text = _midiWork.Vfo is { } v ? $"{v}  ·  {_midiWork.Encoder}" : "nog niet geleerd";
+        _midiPttText.Text = _midiWork.Ptt is { } p ? p.ToString() : "nog niet geleerd";
+        var enc = _midiWork.Encoder with { Invert = false };
+        _midiEncoder.SelectedIndex = Array.FindIndex(EncoderChoices, c => c.Enc == enc);
+        _midiInvert.IsChecked = _midiWork.Encoder.Invert;
+        _midiPttMode.SelectedIndex = _midiWork.PttMode == PttMode.Toggle ? 1 : 0;
+        _updatingMidiUi = false;
+    }
+
+    private void OnMidiMessage(MidiMessage m) => Dispatcher.UIThread.Post(() =>
+    {
+        _monitorLines.Enqueue($"{DateTime.Now:HH:mm:ss.f}  {m}");
+        while (_monitorLines.Count > 6) _monitorLines.Dequeue();
+        _midiMonitor.Text = string.Join(Environment.NewLine, _monitorLines);
+    });
+
+    private void OnLearnProgress(string text) => Dispatcher.UIThread.Post(() => _midiLearnText.Text = text);
+
+    private void OnLearnFinished(MidiSettings? learned, string message) => Dispatcher.UIThread.Post(() =>
+    {
+        _midiLearnText.Text = message;
+        if (learned is null) return;
+        learned.Device = _midiWork.Device;
+        _midiWork = learned;
+        ApplyMidiWork();
+        _midiLearnText.Text = message;
+    });
 
     private static TextBlock Hint(string text) =>
         new TextBlock { Text = text, FontSize = 11, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(118, -4, 0, 0) }
@@ -256,6 +422,8 @@ public sealed class SettingsWindow : Window
         _settings.AdaptiveCache = _adaptive.IsChecked == true;
         _settings.VfoMode = _vfoMode.IsChecked == true;
         _settings.AutoConnect = _autoConnect.IsChecked == true;
+        _settings.Midi = _midiWork.Clone();
+        _saved = true;
         Close(true);
     }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BoltCat.Core;
+using BoltCat.Core.Midi;
 
 namespace BoltCatControl;
 
@@ -31,6 +32,9 @@ public sealed class AppSettings
     /// <summary>Schaal van de hele interface (1.0 = 100 %). Ctrl +/− /0 of Ctrl + scrollwiel.</summary>
     public double UiScale { get; set; } = 1.0;
     public int StepHz { get; set; } = 100;
+
+    /// <summary>MIDI controller: apparaat, VFO encoder, PTT knop.</summary>
+    public MidiSettings Midi { get; set; } = new();
 
     /// <summary>Laatste frequentie per band ("20" → 14 205 000).</summary>
     public Dictionary<string, long> BandMemory { get; set; } = [];
