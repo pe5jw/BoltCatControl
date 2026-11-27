@@ -1,0 +1,26 @@
+name: Diagnose ARM PTT (tijdelijk)
+on:
+  pull_request:
+jobs:
+  diag:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04-arm, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Hamlib
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libhamlib-utils netcat-openbsd
+          rigctl --version; uname -m
+      - name: rigctl direct
+        run: |
+          echo "== T 1 (kort)";        rigctl -m 1 T 1; echo "exit $?"
+          echo "== set_ptt (lang)";    rigctl -m 1 '\set_ptt' 1; echo "exit $?"
+          echo "== verbose";           rigctl -m 1 -vvvvv T 1 2>&1 | grep -iE "ptt|err|invalid|RPRT" | head -30
+      - name: via rigctld
+        run: |
+          rigctld -m 1 -t 4599 & sleep 1
+          for c in 'T 1' 't' '\set_ptt 1' '+\set_ptt 1' '+\set_ptt 0' '+\get_ptt' '+\set_ptt currVFO 1' '+\dump_caps'; do
+            echo "== $c"; printf '%s\n' "$c" | nc -q1 127.0.0.1 4599 | grep -iE "ptt|rprt|error|^[0-9]" | head -8
+          done
+          echo "== caps ptt"; printf '\\dump_caps\n' | nc -q1 127.0.0.1 4599 | grep -iE "ptt|Can set|Can get" | head -20
