@@ -175,6 +175,42 @@ public class MidiTests
     }
 
     [Fact]
+    public async Task Controller_met_twee_ccs_per_klik()
+    {
+        // Per klik: CC 64 (64/66) én CC 65 (1/127), zoals de monitor bij een echte controller liet zien
+        var (fake, rig, midi, input) = await Setup(new MidiSettings(), step: 100);
+        await using var _f = fake; await using var _r = rig; using var _m = midi;
+
+        var finished = new TaskCompletionSource<MidiSettings?>();
+        midi.LearnFinished += (s, _) => finished.TrySetResult(s);
+        midi.LearnVfo();
+        for (int i = 0; i < 4; i++) { input.Send(MidiKind.ControlChange, 64, 66); input.Send(MidiKind.ControlChange, 65, 1); await Task.Delay(30); }
+        await Task.Delay(1000);
+        for (int i = 0; i < 4; i++) { input.Send(MidiKind.ControlChange, 64, 64); input.Send(MidiKind.ControlChange, 65, 127); await Task.Delay(30); }
+        var learned = await finished.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(new MidiControl(MidiKind.ControlChange, 1, 64), learned!.Vfo);
+        Assert.Equal(EncoderMode.Offset, learned.Encoder.Mode);
+        midi.Apply(learned);
+
+        // Eén klik rechtsom = precies één stap (de tweede CC telt niet dubbel)
+        input.Send(MidiKind.ControlChange, 64, 66);
+        input.Send(MidiKind.ControlChange, 65, 1);
+        Assert.Equal(14_074_100, rig.DisplayFrequency);
+        await Until(() => fake.FreqA == 14_074_100);
+
+        // PTT leren: draaien aan de VFO wordt genegeerd, de knop telt
+        var ptt = new TaskCompletionSource<MidiSettings?>();
+        midi.LearnFinished += (s, _) => ptt.TrySetResult(s);
+        midi.LearnPtt();
+        input.Send(MidiKind.ControlChange, 64, 66);
+        input.Send(MidiKind.ControlChange, 65, 127);
+        input.Send(MidiKind.NoteOn, 67, 127);
+        var p = await ptt.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(new MidiControl(MidiKind.NoteOn, 1, 67), p!.Ptt);
+        Assert.Equal(new MidiControl(MidiKind.ControlChange, 1, 64), p.Vfo); // VFO blijft geleerd
+    }
+
+    [Fact]
     public async Task Leren_van_vfo_en_ptt()
     {
         var (fake, rig, midi, input) = await Setup(new MidiSettings());

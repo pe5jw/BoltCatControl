@@ -156,6 +156,14 @@ public sealed class MidiController : IDisposable
 
     // ── Leren ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Hoort dit CC bericht bij de (geleerde) VFO-knop of het nummer ernaast?
+    /// Sommige controllers sturen per klik twee CC's (bijv. CC 64 = 64/66 en CC 65 = 1/127).
+    /// </summary>
+    private bool IsEncoderLike(MidiMessage m) =>
+        _settings.Vfo is { } vfo && vfo.Kind == MidiKind.ControlChange && m.Channel == vfo.Channel
+        && Math.Abs(m.Number - vfo.Number) <= 1;
+
     /// <summary>VFO leren: eerst een paar klikjes rechtsom, dan linksom.</summary>
     public void LearnVfo() => StartLearn(LearnPhase.VfoRight, "Draai de VFO-knop een paar klikjes RECHTSOM…");
 
@@ -203,7 +211,8 @@ public sealed class MidiController : IDisposable
         {
             switch (_phase)
             {
-                case LearnPhase.Ptt when m.IsPress:
+                // De VFO-knop (of zijn tweede CC) is geen PTT: draaien tijdens PTT-leren negeren
+                case LearnPhase.Ptt when m.IsPress && !(m.Kind == MidiKind.ControlChange && IsEncoderLike(m)):
                     done = _settings.Clone();
                     done.Ptt = MidiControl.From(m);
                     doneMessage = $"PTT geleerd: {done.Ptt}";

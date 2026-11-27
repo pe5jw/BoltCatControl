@@ -55,7 +55,6 @@ public sealed class SettingsWindow : Window
     // MIDI: werkkopie, pas bij Opslaan definitief; bij Annuleren terug naar de oude
     private readonly MidiController? _midi;
     private MidiSettings _midiWork;
-    private bool _saved;
     private ComboBox _midiDevice = null!;
     private TextBlock _midiVfoText = null!, _midiPttText = null!, _midiLearnText = null!, _midiMonitor = null!;
     private ComboBox _midiEncoder = null!, _midiPttMode = null!;
@@ -279,7 +278,6 @@ public sealed class SettingsWindow : Window
                 _midi.LearnProgress -= OnLearnProgress;
                 _midi.LearnFinished -= OnLearnFinished;
                 _midi.CancelLearn();
-                if (!_saved) _midi.Apply(_settings.Midi); // annuleren: oude instellingen terug
             };
         }
         UpdateMidiUi();
@@ -316,6 +314,10 @@ public sealed class SettingsWindow : Window
 
     private void ApplyMidiWork()
     {
+        // MIDI geldt direct én wordt direct bewaard: geleerde knoppen gaan nooit meer
+        // verloren als je het venster met het kruisje sluit
+        _settings.Midi = _midiWork.Clone();
+        _settings.Save();
         if (_midi is null) return;
         var error = _midi.Apply(_midiWork);
         _midiLearnText.Text = error ?? (_midi.IsOpen ? $"Verbonden met {_midi.OpenDevice}" : "");
@@ -325,8 +327,8 @@ public sealed class SettingsWindow : Window
     private void UpdateMidiUi()
     {
         _updatingMidiUi = true;
-        _midiVfoText.Text = _midiWork.Vfo is { } v ? $"{v}  ·  {_midiWork.Encoder}" : "nog niet geleerd";
-        _midiPttText.Text = _midiWork.Ptt is { } p ? p.ToString() : "nog niet geleerd";
+        _midiVfoText.Text = _midiWork.Vfo is { } v ? $"{v}  ·  {_midiWork.Encoder}" : "nog niet geleerd — klik op Leer VFO-knop";
+        _midiPttText.Text = _midiWork.Ptt is { } p ? p.ToString() : "nog niet geleerd — klik op Leer PTT-knop";
         var enc = _midiWork.Encoder with { Invert = false };
         _midiEncoder.SelectedIndex = Array.FindIndex(EncoderChoices, c => c.Enc == enc);
         _midiInvert.IsChecked = _midiWork.Encoder.Invert;
@@ -425,7 +427,6 @@ public sealed class SettingsWindow : Window
         _settings.VfoMode = _vfoMode.IsChecked == true;
         _settings.AutoConnect = _autoConnect.IsChecked == true;
         _settings.Midi = _midiWork.Clone();
-        _saved = true;
         Close(true);
     }
 }
