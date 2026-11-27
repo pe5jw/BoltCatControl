@@ -36,6 +36,9 @@ public sealed class SettingsWindow : Window
     private readonly TextBlock _selectedText;
     private readonly TextBlock _modelsStatus;
     private readonly ComboBox _port;
+    private readonly TabControl _tabs;
+    private readonly Dictionary<MidiAction, TextBlock> _buttonTexts = [];
+    private TextBlock _buttonsLearnText = null!, _buttonsLastMsg = null!;
     private readonly ComboBox _baud;
     private readonly ComboBox _cache;
     private readonly CheckBox _adaptive;
@@ -76,8 +79,8 @@ public sealed class SettingsWindow : Window
         _midi = midi;
         _midiWork = settings.Midi.Clone();
         Title = "BoltCatControl — instellingen";
-        Width = 560;
-        Height = 820;
+        Width = 600;
+        Height = 660;
         MinWidth = 480;
         MinHeight = 560;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -175,15 +178,17 @@ public sealed class SettingsWindow : Window
         var save = Ui.Button("Opslaan en verbinden", () => { Save(); return Task.CompletedTask; }, minWidth: 170);
         Ui.SetActive(save, true);
 
-        Content = new ScrollViewer
-        {
-            Content = new StackPanel
-            {
-                Margin = new Thickness(14),
-                Spacing = 10,
-                Children = { radio, connection, BuildMidiPanel(), view, advanced, _error, Ui.Row([], [cancel, save]) },
-            },
-        };
+        // Tabbladen; foutmelding en knoppen staan altijd onderaan in beeld
+        _tabs = new TabControl { Margin = new Thickness(8, 6, 8, 0) };
+        _tabs.Items.Add(Tab("Radio", radio, connection));
+        _tabs.Items.Add(Tab("MIDI", BuildMidiPanel()));
+        _tabs.Items.Add(Tab("MIDI-knoppen", BuildButtonsPanel()));
+        _tabs.Items.Add(Tab("Weergave", view, advanced));
+        UpdateMidiUi();
+
+        var bottom = new StackPanel { Spacing = 8, Margin = new Thickness(14, 6, 14, 14), Children = { _error, Ui.Row([], [cancel, save]) } };
+        DockPanel.SetDock(bottom, Dock.Bottom);
+        Content = new DockPanel { Children = { bottom, _tabs } };
 
         // Instellingen in dezelfde schaal als het hoofdvenster
         var s = Math.Clamp(settings.UiScale, MainWindow.MinScale, MainWindow.MaxScale);
@@ -195,6 +200,59 @@ public sealed class SettingsWindow : Window
         }
 
         Opened += async (_, _) => await LoadModelsAsync();
+    }
+
+    /// <summary>Tabblad kiezen (voor de screenshot-test).</summary>
+    public void SelectTab(int index) => _tabs.SelectedIndex = index;
+
+    private static TabItem Tab(string header, params Control[] panels)
+    {
+        var stack = new StackPanel { Margin = new Thickness(6, 10, 6, 6), Spacing = 10 };
+        foreach (var p in panels) stack.Children.Add(p);
+        return new TabItem { Header = header, Content = new ScrollViewer { Content = stack } };
+    }
+
+    // ── MIDI-knoppen ──────────────────────────────────────────────────────
+
+    private Control BuildButtonsPanel()
+    {
+        _buttonsLearnText = new TextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap }
+            .Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.Rx);
+        _buttonsLastMsg = Ui.MonoText("Laatst ontvangen: —", 11, BoltTheme.Keys.TextDim);
+        var intro = new TextBlock
+        {
+            Text = "Klik op Leer en druk op de knop van je controller. Een knop doet maar één ding: " +
+                   "geef je hem een nieuwe taak, dan verdwijnt de oude.",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+        }.Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.TextDim);
+
+        var stack = new StackPanel { Spacing = 4 };
+        stack.Children.Add(Ui.SectionLabel("MIDI-knoppen"));
+        stack.Children.Add(intro);
+        stack.Children.Add(_buttonsLastMsg);
+        stack.Children.Add(_buttonsLearnText);
+
+        foreach (var (group, actions) in MidiActions.Groups)
+        {
+            var header = Ui.SectionLabel(group);
+            header.Margin = new Thickness(2, 12, 0, 2);
+            stack.Children.Add(header);
+            foreach (var a in actions)
+            {
+                var action = a;
+                var label = new TextBlock { Text = MidiActions.Label(action), Width = 170, FontSize = 12, VerticalAlignment = VerticalAlignment.Center }
+                    .Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.Text);
+                var learn = Ui.Button("Leer", () => { _midi?.LearnButton(action); return Task.CompletedTask; }, minWidth: 56, small: true);
+                var clear = Ui.Button("✕", () => { _midiWork.ClearButton(action); ApplyMidiWork(); return Task.CompletedTask; }, small: true);
+                ToolTip.SetTip(clear, "Knop wissen");
+                var text = Ui.MonoText("—", 12, BoltTheme.Keys.Accent);
+                text.VerticalAlignment = VerticalAlignment.Center;
+                _buttonTexts[action] = text;
+                stack.Children.Add(new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { label, learn, clear, text } });
+            }
+        }
+        return Ui.Panel(stack);
     }
 
     private static bool IsFt8x7(RigModel m) =>
@@ -333,26 +391,35 @@ public sealed class SettingsWindow : Window
         _midiEncoder.SelectedIndex = Array.FindIndex(EncoderChoices, c => c.Enc == enc);
         _midiInvert.IsChecked = _midiWork.Encoder.Invert;
         _midiPttMode.SelectedIndex = _midiWork.PttMode == PttMode.Toggle ? 1 : 0;
+        foreach (var (action, text) in _buttonTexts)
+            text.Text = _midiWork.ButtonFor(action)?.ToString() ?? "—";
         _updatingMidiUi = false;
     }
 
     private void OnMidiMessage(MidiMessage m) => Dispatcher.UIThread.Post(() =>
     {
+        _buttonsLastMsg.Text = $"Laatst ontvangen: {m}";
         _monitorLines.Enqueue($"{DateTime.Now:HH:mm:ss.f}  {m}");
         while (_monitorLines.Count > 6) _monitorLines.Dequeue();
         _midiMonitor.Text = string.Join(Environment.NewLine, _monitorLines);
     });
 
-    private void OnLearnProgress(string text) => Dispatcher.UIThread.Post(() => _midiLearnText.Text = text);
+    private void OnLearnProgress(string text) => Dispatcher.UIThread.Post(() =>
+    {
+        _midiLearnText.Text = text;
+        _buttonsLearnText.Text = text;
+    });
 
     private void OnLearnFinished(MidiSettings? learned, string message) => Dispatcher.UIThread.Post(() =>
     {
         _midiLearnText.Text = message;
+        _buttonsLearnText.Text = message;
         if (learned is null) return;
         learned.Device = _midiWork.Device;
         _midiWork = learned;
         ApplyMidiWork();
         _midiLearnText.Text = message;
+        _buttonsLearnText.Text = message;
     });
 
     private static TextBlock Hint(string text) =>

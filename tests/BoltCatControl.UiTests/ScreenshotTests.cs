@@ -163,8 +163,10 @@ public class ScreenshotTests
             Encoder = new(BoltCat.Core.Midi.EncoderMode.Offset, 65),
             Ptt = new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 48),
         };
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.BandUp, new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 40));
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.BandDown, new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 41));
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.StepNext, new(BoltCat.Core.Midi.MidiKind.ControlChange, 1, 20));
         var w = new SettingsWindow(settings);
-        w.Height = 1500; // alles in beeld voor de screenshot
         w.Show();
 
         // Wachten tot de radiolijst (rigctld -l) geladen is
@@ -175,7 +177,15 @@ public class ScreenshotTests
             Thread.Sleep(50);
         }
         w.SearchForTest("897");
-        Capture(w, "6-instellingen");
+        Capture(w, "6-instellingen-radio");
+        w.SelectTab(1);
+        Capture(w, "6b-instellingen-midi");
+        w.SelectTab(2);
+        w.Height = 1250; // hele lijst in beeld voor de screenshot
+        Capture(w, "6c-instellingen-midi-knoppen");
+        w.Height = 660;
+        w.SelectTab(3);
+        Capture(w, "6d-instellingen-weergave");
         w.Close();
     }
 
