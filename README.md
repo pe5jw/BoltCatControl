@@ -22,6 +22,7 @@ Geen remote, geen com0com — puur lokaal.
 |---|---|
 | **Windows x64** | primair (desktop) |
 | **Linux x64** | volledig ondersteund, zelfde codebase |
+| **Raspberry Pi** | Pi 3/4/5 met Pi OS 64-bit (`linux-arm64`), of 32-bit (`linux-arm`) |
 | **Stack** | .NET 10, Avalonia 11 (puur C#, geen AXAML) |
 | **CAT** | Hamlib `rigctld` (meegeleverd, 600+ radio's) |
 
@@ -98,6 +99,14 @@ De nieuwste build van `main` staat altijd in de pre-release
 ```
 wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-linux-x64.zip
 wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-win-x64.zip
+```
+
+Raspberry Pi (Pi OS): `uname -m` geeft `aarch64` → `BoltCatControl-linux-arm64.zip`,
+`armv7l` → `BoltCatControl-linux-arm.zip`.
+
+```
+wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-linux-arm64.zip
+unzip BoltCatControl-linux-arm64.zip && cd BoltCatControl && ./BoltCatControl
 ```
 
 Linux: ontbreekt rigctld, dan biedt BoltCatControl zelf aan om Hamlib te installeren

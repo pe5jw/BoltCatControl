@@ -120,7 +120,9 @@ public class RigctldProcessTests(ITestOutputHelper output)
         output.WriteLine($"rigctld: {exe}");
 
         int port = FreePort();
-        await using var proc = new RigctldProcess(new RigctldOptions { Model = 1, TcpPort = port });
+        // -P RIG: PTT via CAT. De dummy van Hamlib 4.5.x heeft standaard "PTT type: None"
+        // en weigert dan set_ptt (Ubuntu 24.04 / Pi OS Bookworm); echte radio's met CAT-PTT niet.
+        await using var proc = new RigctldProcess(new RigctldOptions { Model = 1, TcpPort = port, ExtraArgs = ["-P", "RIG"] });
         proc.Output += Log;
         await proc.StartAsync();
         Assert.True(proc.StartedByUs);
