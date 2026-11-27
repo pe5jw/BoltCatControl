@@ -55,27 +55,41 @@ jobs:
       - name: Build
         run: dotnet build BoltCatControl.slnx -c Release
 
+      - name: Tests
+        run: dotnet test BoltCatControl.slnx -c Release --no-build --logger "console;verbosity=normal"
+
       - name: Publish ${{ matrix.rid }}
         run: >
           dotnet publish src/BoltCatControl -r ${{ matrix.rid }} --self-contained
           -c Release -o out/BoltCatControl
           /p:Version=${{ steps.ver.outputs.version }}
 
+      # Testprogramma als één losse exe (geen SDK nodig om te testen)
+      - name: Publish BoltCat.Test ${{ matrix.rid }}
+        run: >
+          dotnet publish tools/BoltCat.Test -r ${{ matrix.rid }} --self-contained
+          -c Release -o out/BoltCat.Test
+          /p:PublishSingleFile=true /p:Version=${{ steps.ver.outputs.version }}
+
       - name: Zippen (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path out/BoltCatControl -DestinationPath "BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
+        run: |
+          Compress-Archive -Path out/BoltCatControl -DestinationPath "BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
+          Compress-Archive -Path out/BoltCat.Test/BoltCat.Test.exe -DestinationPath "BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip"
 
       - name: Zippen (Linux, met execute-bit)
         if: runner.os == 'Linux'
         run: |
-          chmod +x out/BoltCatControl/BoltCatControl
-          cd out && zip -qr "../BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCatControl
+          chmod +x out/BoltCatControl/BoltCatControl out/BoltCat.Test/BoltCat.Test
+          cd out
+          zip -qr "../BoltCatControl-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCatControl
+          zip -qj "../BoltCat.Test-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.zip" BoltCat.Test/BoltCat.Test
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.rid }}
-          path: BoltCatControl-*.zip
+          path: BoltCat*.zip
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -93,4 +107,4 @@ jobs:
           gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
                  --title "BoltCatControl $GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber BoltCatControl-*.zip
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber BoltCat*.zip
