@@ -4,7 +4,8 @@
 
 BoltCatControl draait op de pc die direct aan de radio hangt. De app start zelf een lokale
 [Hamlib](https://hamlib.github.io/) `rigctld` op de COM/USB-poort en praat daar via TCP mee.
-Geen remote, geen com0com — puur lokaal.
+Puur lokaal, geen remote. Komt de radio via een virtuele COM-poort binnen (com0com),
+dan werkt dat ook: zie [Windows: virtuele COM-poort (com0com)](#windows-virtuele-com-poort-com0com).
 
 ```
 [Transceiver]
@@ -112,6 +113,77 @@ unzip BoltCatControl-linux-arm64.zip && cd BoltCatControl && ./BoltCatControl
 Linux: ontbreekt rigctld, dan biedt BoltCatControl zelf aan om Hamlib te installeren
 (apt, dnf, pacman, zypper; wachtwoord via het systeemvenster of een terminal), en ook om je
 gebruiker toegang te geven tot de seriële poort (groep `dialout`). Windows: Hamlib zit erbij.
+
+## Windows: virtuele COM-poort (com0com)
+
+Hangt de radio niet aan deze pc, maar komt CAT binnen via een programma dat een seriële
+poort over het netwerk doorgeeft (bijvoorbeeld RadioBridge), dan heb je op Windows een
+virtueel COM-poortpaar nodig. [com0com](https://sourceforge.net/projects/com0com/) maakt twee
+poorten die met elkaar verbonden zijn, net als een null-modemkabel: wat op COM10 wordt
+geschreven komt op COM11 binnen, en andersom. BoltCatControl gebruikt COM11 als een gewone
+COM-poort.
+
+```
+[netwerk-programma] ── COM10 ══ com0com ══ COM11 ── [rigctld] ── TCP :4532 ── [BoltCatControl]
+```
+
+### Downloaden
+
+Neem de **ondertekende** versie 2.2.2.0 voor 64-bit Windows:
+
+- <https://sourceforge.net/projects/com0com/files/com0com/2.2.2.0/> → `com0com-2.2.2.0-x64-fre-signed.zip`
+
+Windows 10/11 laadt geen niet-ondertekende drivers. Met de verkeerde versie staan de poorten
+in Apparaatbeheer met een geel uitroepteken (Code 52) en werken ze niet.
+
+### Installeren
+
+1. Pak de zip uit en start de setup met rechtsklik → **Als administrator uitvoeren**.
+2. Open daarna, ook als administrator, **Start → com0com → Setup Command Prompt**.
+3. Maak een paar met gewone COM-namen. Kies nummers die nog vrij zijn
+   (kijk in Apparaatbeheer → *Poorten (COM & LPT)*):
+   ```
+   install PortName=COM10 PortName=COM11
+   ```
+   Heeft de setup al een paar `CNCA0`/`CNCB0` gemaakt, hernoem dat dan:
+   ```
+   change CNCA0 PortName=COM10
+   change CNCB0 PortName=COM11
+   ```
+   Met `list` zie je welke paren er zijn. Het grafische **Setup**-venster van com0com kan
+   hetzelfde: vul bij beide poorten de naam in en klik op *Apply*.
+4. Controleer in Apparaatbeheer dat COM10 en COM11 zonder uitroepteken onder
+   *com0com - serial port emulators* staan.
+
+### Instellen
+
+| Waar | Instelling |
+|---|---|
+| Netwerk-programma (bijv. RadioBridge client) | COM10 |
+| BoltCatControl → *Instellingen → Radio* | COM-poort **COM11** (klik op vernieuwen als hij er niet bij staat), model = je echte radio |
+| Baud | gelijk aan de CAT RATE van de radio; de echte snelheid wordt ingesteld waar de radio aan de USB-kabel hangt |
+
+Start eerst het netwerk-programma en daarna BoltCatControl → **Verbinden**.
+Testen kan ook met `BoltCat.Test --rig ft-897d --com COM11 --baud 9600`.
+
+Over een tragere verbinding is de radio wat langzamer. Laat dan *Cache automatisch aanpassen*
+(tab *Weergave*) aan, dan past BoltCatControl de Hamlib-cache zelf aan als de radio niet op
+tijd antwoordt. PTT gaat via CAT; PTT via RTS/DTR hangt af van wat het netwerk-programma
+doorgeeft.
+
+### Andere programma's tegelijk
+
+rigctld laat meerdere programma's tegelijk toe, daar is geen extra COM-poort voor nodig.
+Kies in WSJT-X, JTDX, fldigi of Log4OM als radio **Hamlib NET rigctl** met adres
+`127.0.0.1:4532`. Een programma dat alleen een COM-poort kent, kan via `rigctlcom`
+(zit in de map `hamlib`) en een tweede com0com-paar, bijv. COM12/COM13. `rigctlcom` doet zich
+dan voor als een Kenwood TS-2000:
+
+```
+hamlib\rigctlcom -m 2 -r 127.0.0.1:4532 -R COM12 -S 9600
+```
+
+Stel in dat programma een Kenwood TS-2000 in op COM13, 9600 baud.
 
 ## Releases
 
