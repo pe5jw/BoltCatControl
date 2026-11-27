@@ -62,6 +62,12 @@ public sealed class MainWindow : Window
     private readonly StatusPill _pillNotice  = new("");
     private readonly StatusPill _pillVersion;
 
+    // Schaal: alles (tekst, knoppen, VFO) via één LayoutTransform
+    private readonly LayoutTransformControl _scaleHost = new();
+    private double _scale = 1.0;
+    /// <summary>Ontwerpmaat: op deze venstergrootte is de schaal 100 %.</summary>
+    private const double BaseWidth = 920, BaseHeight = 545;
+
     public MainWindow(RigController rig, AppSettings settings, bool autoStart)
     {
         _rig = rig;
@@ -72,10 +78,11 @@ public sealed class MainWindow : Window
             ?.Split('+')[0] ?? "?";
 
         Title     = $"BoltCatControl {_version}";
-        Width     = 920;
-        Height    = 545;
-        MinWidth  = 780;
-        MinHeight = 520;
+        // Venster mag flink kleiner: de inhoud schaalt mee en blijft altijd helemaal in beeld
+        MinWidth  = BaseWidth * MinScale;
+        MinHeight = BaseHeight * MinScale;
+        Width     = Math.Max(MinWidth, _settings.WindowWidth ?? BaseWidth * _settings.UiScale);
+        Height    = Math.Max(MinHeight, _settings.WindowHeight ?? BaseHeight * _settings.UiScale);
         this.Themed(BackgroundProperty, BoltTheme.Keys.BgDeep);
 
         // ── Header ────────────────────────────────────────────────────────
@@ -290,13 +297,23 @@ public sealed class MainWindow : Window
         Add(controls, 3, 10);
         Add(bands, 4, 10);
         Add(status, 5, 10);
-        Content = root;
+        _scaleHost.Child = root;
+        Content = _scaleHost;
+        FitToSize(Width, Height);
+        SizeChanged += (_, e) => FitToSize(e.NewSize.Width, e.NewSize.Height);
 
         // ── Koppeling met de radio ────────────────────────────────────────
         _rig.StateChanged += s => Dispatcher.UIThread.Post(() => ApplyState(s));
         _rig.Notice += n => Dispatcher.UIThread.Post(() => ShowNotice(n));
 
         KeyDown += OnKeyDown;
+        // Ctrl + scrollwiel = schaal (tunnel: vóór de VFO-cijfers het wiel krijgen)
+        AddHandler(PointerWheelChangedEvent, (_, e) =>
+        {
+            if (!e.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+            SetScale(_scale + (e.Delta.Y > 0 ? ScaleStep : -ScaleStep), resizeWindow: true);
+            e.Handled = true;
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         Opened += async (_, _) => await OnOpenedAsync();
         Closing += OnClosing;
 
@@ -344,7 +361,9 @@ public sealed class MainWindow : Window
     private async Task OpenSettingsAsync()
     {
         var dialog = new SettingsWindow(_settings);
-        if (await dialog.ShowDialog<bool>(this))
+        var saved = await dialog.ShowDialog<bool>(this);
+        if (Math.Abs(_settings.UiScale - _scale) > 0.02) SetScale(_settings.UiScale, resizeWindow: true);
+        if (saved)
         {
             _settings.Save();
             await ConnectAsync();
@@ -373,8 +392,65 @@ public sealed class MainWindow : Window
 
     // ── Toetsenbord ───────────────────────────────────────────────────────
 
+    public const double ScaleStep = 0.1, MinScale = 0.4, MaxScale = 3.0;
+
+    /// <summary>
+    /// Schaal volgt de venstergrootte: de inhoud wordt zo groot dat hij precies past.
+    /// In de andere richting rekt de layout op (breder venster = bredere panelen),
+    /// zodat er nooit iets wordt afgeknipt of naar een tweede regel verschuift.
+    /// </summary>
+    private void FitToSize(double width, double height)
+    {
+        if (width <= 0 || height <= 0 || double.IsNaN(width) || double.IsNaN(height)) return;
+        var scale = Math.Clamp(Math.Min(width / BaseWidth, height / BaseHeight), MinScale, MaxScale);
+        _scale = scale;
+        _scaleHost.LayoutTransform = new ScaleTransform(scale, scale);
+        _settings.UiScale = Math.Round(scale, 2);
+        _settings.WindowWidth = Math.Round(width);
+        _settings.WindowHeight = Math.Round(height);
+    }
+
+    /// <summary>
+    /// Schaal instellen (Ctrl +/−/0, Ctrl + scrollwiel, instellingen): het venster wordt
+    /// naar verhouding groter/kleiner, nooit groter dan het scherm.
+    /// </summary>
+    public void SetScale(double scale, bool resizeWindow)
+    {
+        scale = Math.Round(Math.Clamp(scale, MinScale, MaxScale), 2);
+        var factor = scale / _scale;
+        double w = (double.IsNaN(Width) ? BaseWidth : Width) * factor;
+        double h = (double.IsNaN(Height) ? BaseHeight : Height) * factor;
+        if (Screens?.ScreenFromWindow(this) is { } screen)
+        {
+            var area = screen.WorkingArea.Size.ToSize(screen.Scaling);
+            var fit = Math.Min(1.0, Math.Min(area.Width / w, area.Height / h)); // past op het scherm
+            w *= fit;
+            h *= fit;
+        }
+        w = Math.Max(MinWidth, w);
+        h = Math.Max(MinHeight, h);
+        if (resizeWindow)
+        {
+            Width = w;
+            Height = h;
+        }
+        FitToSize(w, h);
+        if (IsVisible) ShowNotice($"Schaal {_scale:P0}");
+    }
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
+        // Ctrl + / Ctrl − / Ctrl 0: schaal
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            switch (e.Key)
+            {
+                case Key.OemPlus or Key.Add:       SetScale(_scale + ScaleStep, true); e.Handled = true; return;
+                case Key.OemMinus or Key.Subtract: SetScale(_scale - ScaleStep, true); e.Handled = true; return;
+                case Key.D0 or Key.NumPad0:        SetScale(1.0, true);                e.Handled = true; return;
+            }
+        }
+
         if (!_rig.State.Connected) return;
         switch (e.Key)
         {

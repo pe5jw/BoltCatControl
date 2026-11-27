@@ -118,6 +118,41 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Schaal_150_procent()
+    {
+        var settings = Ft897();
+        settings.UiScale = 1.5;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 7_074_000, Mode = "PKTUSB", StrengthDb = -6 });
+        Assert.True(w.Width > 1000, $"breedte {w.Width}"); // 920 × 1,5 (begrensd door het scherm)
+        Capture(w, "7-schaal-150");
+        w.SetScale(0.8, resizeWindow: true);
+        Capture(w, "8-schaal-80");
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void Klein_venster_alles_in_beeld()
+    {
+        var settings = Ft897();
+        settings.WindowWidth = 520;   // veel smaller dan de ontwerpmaat
+        settings.WindowHeight = 330;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 14_074_000, Mode = "USB", StrengthDb = -6 });
+        Capture(w, "9-klein-venster-520");
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void Breed_laag_venster()
+    {
+        var settings = Ft897();
+        settings.WindowWidth = 1400;
+        settings.WindowHeight = 500;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 7_074_000, Mode = "LSB", StrengthDb = -18 });
+        Capture(w, "10-breed-laag");
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Instellingen()
     {
         var w = new SettingsWindow(Ft897());
