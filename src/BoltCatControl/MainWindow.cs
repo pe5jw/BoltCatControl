@@ -327,6 +327,9 @@ public sealed class MainWindow : Window
         _ledMidi.IsOn = _midi?.IsOpen == true;
         ToolTip.SetTip(_ledMidi, _midi?.OpenDevice is { } dev ? $"MIDI: {dev}" : "MIDI: geen apparaat");
 
+        // Fout in een knop: niet stil negeren maar tonen
+        Ui.ButtonError += (text, ex) => Dispatcher.UIThread.Post(() => ShowNotice($"Fout bij '{text}': {ex.Message}"));
+
         KeyDown += OnKeyDown;
         // Ctrl + scrollwiel = schaal (tunnel: vóór de VFO-cijfers het wiel krijgen)
         AddHandler(PointerWheelChangedEvent, (_, e) =>

@@ -152,6 +152,22 @@ public class ScreenshotTests
         w.Close();
     }
 
+    [AvaloniaTheory]
+    [InlineData(0.87)]
+    [InlineData(0.5)]
+    [InlineData(1.6)]
+    public void Instellingen_openen_bij_andere_schaal(double scale)
+    {
+        // Regressie: na het verkleinen van het hoofdvenster (schaal ≠ 100 %) opende het
+        // instellingenvenster niet meer ("control already has a parent")
+        var settings = Ft897();
+        settings.UiScale = scale;
+        var w = new SettingsWindow(settings);
+        w.Show();
+        Capture(w, $"6e-instellingen-schaal-{(int)(scale * 100)}");
+        w.Close();
+    }
+
     [AvaloniaFact]
     public void Instellingen()
     {

@@ -188,15 +188,20 @@ public sealed class SettingsWindow : Window
 
         var bottom = new StackPanel { Spacing = 8, Margin = new Thickness(14, 6, 14, 14), Children = { _error, Ui.Row([], [cancel, save]) } };
         DockPanel.SetDock(bottom, Dock.Bottom);
-        Content = new DockPanel { Children = { bottom, _tabs } };
+        var body = new DockPanel { Children = { bottom, _tabs } };
 
-        // Instellingen in dezelfde schaal als het hoofdvenster
-        var s = Math.Clamp(settings.UiScale, MainWindow.MinScale, MainWindow.MaxScale);
+        // Instellingen in dezelfde schaal als het hoofdvenster. Let op: de inhoud pas
+        // ná het inpakken aan het venster hangen (een control kan maar één ouder hebben).
+        var s = Math.Clamp(settings.UiScale, 0.75, 2.0);
         if (Math.Abs(s - 1.0) > 0.001)
         {
-            Content = new LayoutTransformControl { LayoutTransform = new ScaleTransform(s, s), Child = (Control)Content! };
+            Content = new LayoutTransformControl { LayoutTransform = new ScaleTransform(s, s), Child = body };
             Width *= s;
             Height *= s;
+        }
+        else
+        {
+            Content = body;
         }
 
         Opened += async (_, _) => await LoadModelsAsync();
