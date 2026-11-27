@@ -152,6 +152,22 @@ public class ScreenshotTests
         w.Close();
     }
 
+    [AvaloniaTheory]
+    [InlineData(0.87)]
+    [InlineData(0.5)]
+    [InlineData(1.6)]
+    public void Instellingen_openen_bij_andere_schaal(double scale)
+    {
+        // Regressie: na het verkleinen van het hoofdvenster (schaal ≠ 100 %) opende het
+        // instellingenvenster niet meer ("control already has a parent")
+        var settings = Ft897();
+        settings.UiScale = scale;
+        var w = new SettingsWindow(settings);
+        w.Show();
+        Capture(w, $"6e-instellingen-schaal-{(int)(scale * 100)}");
+        w.Close();
+    }
+
     [AvaloniaFact]
     public void Instellingen()
     {
@@ -163,8 +179,10 @@ public class ScreenshotTests
             Encoder = new(BoltCat.Core.Midi.EncoderMode.Offset, 65),
             Ptt = new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 48),
         };
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.BandUp, new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 40));
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.BandDown, new(BoltCat.Core.Midi.MidiKind.NoteOn, 1, 41));
+        settings.Midi.SetButton(BoltCat.Core.Midi.MidiAction.StepNext, new(BoltCat.Core.Midi.MidiKind.ControlChange, 1, 20));
         var w = new SettingsWindow(settings);
-        w.Height = 1500; // alles in beeld voor de screenshot
         w.Show();
 
         // Wachten tot de radiolijst (rigctld -l) geladen is
@@ -175,7 +193,15 @@ public class ScreenshotTests
             Thread.Sleep(50);
         }
         w.SearchForTest("897");
-        Capture(w, "6-instellingen");
+        Capture(w, "6-instellingen-radio");
+        w.SelectTab(1);
+        Capture(w, "6b-instellingen-midi");
+        w.SelectTab(2);
+        w.Height = 1250; // hele lijst in beeld voor de screenshot
+        Capture(w, "6c-instellingen-midi-knoppen");
+        w.Height = 660;
+        w.SelectTab(3);
+        Capture(w, "6d-instellingen-weergave");
         w.Close();
     }
 

@@ -322,9 +322,13 @@ public sealed class MainWindow : Window
                 _midiBlink.Start();
             });
             _midi.Notice += n => Dispatcher.UIThread.Post(() => { ShowNotice(n); _ledMidi.IsOn = _midi.IsOpen; });
+            _midi.ActionTriggered += a => Dispatcher.UIThread.Post(async () => await ExecuteAsync(a));
         }
         _ledMidi.IsOn = _midi?.IsOpen == true;
         ToolTip.SetTip(_ledMidi, _midi?.OpenDevice is { } dev ? $"MIDI: {dev}" : "MIDI: geen apparaat");
+
+        // Fout in een knop: niet stil negeren maar tonen
+        Ui.ButtonError += (text, ex) => Dispatcher.UIThread.Post(() => ShowNotice($"Fout bij '{text}': {ex.Message}"));
 
         KeyDown += OnKeyDown;
         // Ctrl + scrollwiel = schaal (tunnel: vóór de VFO-cijfers het wiel krijgen)
@@ -411,6 +415,40 @@ public sealed class MainWindow : Window
         var sideband = RigModes.SidebandFor(target);
         if (mode is "LSB" or "USB" && sideband != mode)
             await _rig.SetModeAsync(sideband);
+    }
+
+    // ── MIDI-knoppen ──────────────────────────────────────────────────────
+
+    /// <summary>Actie van een MIDI-knop uitvoeren, net alsof je op de knop in het venster klikt.</summary>
+    public async Task ExecuteAsync(MidiAction action)
+    {
+        if (!_rig.State.Connected) return;
+        var s = _rig.State;
+        switch (action)
+        {
+            case MidiAction.TuneUp:   _rig.TuneBy(_settings.StepHz); break;
+            case MidiAction.TuneDown: _rig.TuneBy(-_settings.StepHz); break;
+            case MidiAction.StepNext:
+                _settings.StepHz = Steps[(Array.IndexOf(Steps, _settings.StepHz) + 1) % Steps.Length];
+                ShowNotice($"Stap {(_settings.StepHz >= 1000 ? $"{_settings.StepHz / 1000} kHz" : $"{_settings.StepHz} Hz")}");
+                ApplyState(_rig.State);
+                break;
+            case MidiAction.ModeNext:
+                var modes = RigModes.Buttons;
+                var cur = RigModes.ToButton(s.Mode);
+                var next = modes[(cur is null ? 0 : (modes.ToList().IndexOf(cur) + 1)) % modes.Count];
+                await _rig.SetModeAsync(next);
+                break;
+            case MidiAction.Split:  await _rig.SetSplitAsync(!s.Split); break;
+            case MidiAction.SwapAB: await _rig.SwapVfoAsync(); break;
+            case MidiAction.CopyAB: await _rig.CopyAtoBAsync(); break;
+            case MidiAction.BandUp:   await SelectBandAsync(MidiActions.NextBand(_rig.DisplayFrequency, +1)); break;
+            case MidiAction.BandDown: await SelectBandAsync(MidiActions.NextBand(_rig.DisplayFrequency, -1)); break;
+            default:
+                if (MidiActions.ModeOf(action) is { } mode) await _rig.SetModeAsync(mode);
+                else if (MidiActions.BandOf(action) is { } band) await SelectBandAsync(band);
+                break;
+        }
     }
 
     // ── Toetsenbord ───────────────────────────────────────────────────────

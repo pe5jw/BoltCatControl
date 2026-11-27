@@ -21,10 +21,32 @@ public sealed class MidiSettings
     public MidiControl? Ptt { get; set; }
     public PttMode PttMode { get; set; } = PttMode.Hold;
 
+    /// <summary>Overige knoppen: band, mode, stap, split, A↔B, ...</summary>
+    public List<MidiButton> Buttons { get; set; } = [];
+
     public MidiSettings Clone() => new()
     {
         Enabled = Enabled, Device = Device, Vfo = Vfo, Encoder = Encoder, Ptt = Ptt, PttMode = PttMode,
+        Buttons = [.. Buttons],
     };
+
+    public MidiControl? ButtonFor(MidiAction action) => Buttons.FirstOrDefault(b => b.Action == action)?.Control;
+
+    /// <summary>Knop toewijzen. Een knop doet maar één ding: elders (ook PTT) wordt hij weggehaald.</summary>
+    public void SetButton(MidiAction action, MidiControl control)
+    {
+        Buttons.RemoveAll(b => b.Action == action || b.Control == control);
+        Buttons.Add(new MidiButton(action, control));
+        if (Ptt == control) Ptt = null;
+    }
+
+    public void ClearButton(MidiAction action) => Buttons.RemoveAll(b => b.Action == action);
+
+    public void SetPtt(MidiControl control)
+    {
+        Buttons.RemoveAll(b => b.Control == control);
+        Ptt = control;
+    }
 }
 
 /// <summary>
@@ -42,8 +64,9 @@ public sealed class MidiController : IDisposable
     private MidiSettings _settings = new();
 
     // Leren
-    private enum LearnPhase { None, VfoRight, VfoLeft, Ptt }
+    private enum LearnPhase { None, VfoRight, VfoLeft, Ptt, Button }
     private LearnPhase _phase;
+    private MidiAction _learnAction;
     private MidiControl? _learnControl;
     private readonly List<int> _right = [], _left = [];
     private long _lastLearnMsg;
@@ -64,6 +87,9 @@ public sealed class MidiController : IDisposable
     /// <summary>Elk binnenkomend bericht (voor de monitor en de MIDI LED). Achtergrondthread.</summary>
     public event Action<MidiMessage>? MessageReceived;
     public event Action<string>? Notice;
+
+    /// <summary>Een geleerde knop is ingedrukt (band, mode, stap, ...). Achtergrondthread.</summary>
+    public event Action<MidiAction>? ActionTriggered;
 
     /// <summary>Voortgang van het leren ("Draai nu linksom…").</summary>
     public event Action<string>? LearnProgress;
@@ -151,6 +177,19 @@ public sealed class MidiController : IDisposable
             {
                 _ = _rig.SetPttAsync(!_rig.State.Ptt);
             }
+            return;
+        }
+
+        if (m.IsPress)
+        {
+            foreach (var b in s.Buttons)
+            {
+                if (b.Control.Matches(m))
+                {
+                    ActionTriggered?.Invoke(b.Action);
+                    break;
+                }
+            }
         }
     }
 
@@ -169,6 +208,13 @@ public sealed class MidiController : IDisposable
 
     /// <summary>PTT leren: druk één keer op de knop.</summary>
     public void LearnPtt() => StartLearn(LearnPhase.Ptt, "Druk op de PTT-knop…");
+
+    /// <summary>Knop leren voor een actie (band, mode, ...): druk één keer op de knop.</summary>
+    public void LearnButton(MidiAction action)
+    {
+        _learnAction = action;
+        StartLearn(LearnPhase.Button, $"Druk op de knop voor '{MidiActions.Label(action)}'…");
+    }
 
     public void CancelLearn()
     {
@@ -214,8 +260,16 @@ public sealed class MidiController : IDisposable
                 // De VFO-knop (of zijn tweede CC) is geen PTT: draaien tijdens PTT-leren negeren
                 case LearnPhase.Ptt when m.IsPress && !(m.Kind == MidiKind.ControlChange && IsEncoderLike(m)):
                     done = _settings.Clone();
-                    done.Ptt = MidiControl.From(m);
+                    done.SetPtt(MidiControl.From(m));
                     doneMessage = $"PTT geleerd: {done.Ptt}";
+                    _phase = LearnPhase.None;
+                    break;
+
+                case LearnPhase.Button when m.IsPress && !(m.Kind == MidiKind.ControlChange && IsEncoderLike(m)):
+                    done = _settings.Clone();
+                    var control = MidiControl.From(m);
+                    done.SetButton(_learnAction, control);
+                    doneMessage = $"{MidiActions.Label(_learnAction)}: {control}";
                     _phase = LearnPhase.None;
                     break;
 
@@ -252,7 +306,7 @@ public sealed class MidiController : IDisposable
             if (now - _learnStarted > 20_000)
             {
                 failed = true;
-                message = _phase == LearnPhase.Ptt ? "Geen knop ontvangen." : "Te weinig ontvangen van de VFO-knop.";
+                message = _phase is LearnPhase.Ptt or LearnPhase.Button ? "Geen knop ontvangen." : "Te weinig ontvangen van de VFO-knop.";
                 _phase = LearnPhase.None;
             }
             else if (_lastLearnMsg != 0 && now - _lastLearnMsg > 700)

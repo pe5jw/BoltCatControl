@@ -60,6 +60,8 @@ public sealed record BoltTheme(
         Set("TextControlForeground", Text);
         Set("TextControlForegroundFocused", Text);
 
+        app.Resources["TabItemHeaderFontSize"] = 15d;
+
         // Fluent accent (vinkjes, focus, selectie) = Bolt accent i.p.v. Windows-blauw
         void SetColor(string key, string hex) => app.Resources[key] = Color.Parse(hex);
         SetColor("SystemAccentColor", Accent);

@@ -52,6 +52,9 @@ public static class Ui
         new TextBlock { Text = text, FontFamily = Mono, FontSize = size }
             .Themed(TextBlock.ForegroundProperty, colorKey);
 
+    /// <summary>Een knop gaf een fout; het hoofdvenster toont die in de statusbalk.</summary>
+    public static event Action<string, Exception>? ButtonError;
+
     /// <summary>Knop met async handler; fouten worden afgevangen (de app mag nooit crashen op een klik).</summary>
     public static Button Button(string text, Func<Task> onClick, double minWidth = 0, bool small = false)
     {
@@ -69,7 +72,11 @@ public static class Ui
         b.Click += async (_, _) =>
         {
             try { await onClick(); }
-            catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Knop '{text}': {ex}"); }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine($"Knop '{text}': {ex}");
+                ButtonError?.Invoke(text, ex);
+            }
         };
         return b;
     }

@@ -69,6 +69,10 @@ In *Instellingen → MIDI*:
 3. **Leer PTT-knop**: druk één keer op de knop. Kies *vasthouden = zenden* of *druk aan / druk uit*.
 
 Elke klik van de VFO-knop = de stap uit het hoofdvenster (10 Hz / 100 Hz / 1 kHz).
+
+**MIDI-knoppen** (tab *MIDI-knoppen*): VFO 1 stap omhoog/omlaag, stapgrootte wisselen,
+volgende mode of direct USB/LSB/CW/AM/FM/DATA, split, A↔B, A→B, band omhoog/omlaag en
+elke band direct (160m–70cm). Klik op *Leer* en druk op de knop; een knop doet maar één ding.
 De **monitor** toont live wat de controller stuurt. Windows: elk MIDI apparaat;
 Linux: ALSA raw MIDI (`/dev/snd/midiC*D*`, gebruiker in de groep `audio`).
 
@@ -85,6 +89,18 @@ Release-build (self-contained):
 dotnet publish src/BoltCatControl -r win-x64   --self-contained -c Release -o out/win-x64
 dotnet publish src/BoltCatControl -r linux-x64 --self-contained -c Release -o out/linux-x64
 ```
+
+## Downloaden
+
+De nieuwste build van `main` staat altijd in de pre-release
+[latest](https://github.com/pe5jw/BoltCatControl/releases/tag/latest), zonder inloggen:
+
+```
+wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-linux-x64.zip
+wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-win-x64.zip
+```
+
+Linux: `sudo apt install libhamlib-utils` voor rigctld. Windows: Hamlib zit erbij.
 
 ## Releases
 

@@ -251,4 +251,74 @@ public class MidiTests
         Assert.Equal(new MidiControl(MidiKind.NoteOn, 2, 48), learnedPtt!.Ptt);
         Assert.False(fake.Ptt);
     }
+
+    // ── MIDI-knoppen ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Knop_leren_en_indrukken_geeft_actie()
+    {
+        var (fake, rig, midi, input) = await Setup(new MidiSettings
+        {
+            Vfo = new MidiControl(MidiKind.ControlChange, 1, 64),
+            Encoder = new EncoderSettings(EncoderMode.Offset, 65),
+        });
+        await using var _f = fake; await using var _r = rig; using var _m = midi;
+
+        var learned = new TaskCompletionSource<MidiSettings?>();
+        midi.LearnFinished += (s, _) => learned.TrySetResult(s);
+        midi.LearnButton(MidiAction.BandUp);
+        input.Send(MidiKind.ControlChange, 64, 66);   // VFO draaien telt niet
+        input.Send(MidiKind.NoteOn, 40, 127);
+        var s = await learned.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(new MidiControl(MidiKind.NoteOn, 1, 40), s!.ButtonFor(MidiAction.BandUp));
+        midi.Apply(s);
+        midi.Attach(input);
+
+        var actions = new System.Collections.Concurrent.ConcurrentQueue<MidiAction>();
+        midi.ActionTriggered += actions.Enqueue;
+        input.Send(MidiKind.NoteOn, 40, 127);  // indrukken → actie
+        input.Send(MidiKind.NoteOn, 40, 0);    // loslaten → niets
+        input.Send(MidiKind.NoteOn, 41, 127);  // andere knop → niets
+        Assert.Equal(new[] { MidiAction.BandUp }, actions);
+    }
+
+    [Fact]
+    public void Knop_doet_maar_een_ding()
+    {
+        var s = new MidiSettings();
+        var knop = new MidiControl(MidiKind.NoteOn, 1, 36);
+        s.SetPtt(knop);
+        s.SetButton(MidiAction.Split, knop);       // zelfde knop → PTT vervalt
+        Assert.Null(s.Ptt);
+        s.SetButton(MidiAction.SwapAB, knop);      // en weg bij Split
+        Assert.Null(s.ButtonFor(MidiAction.Split));
+        Assert.Equal(knop, s.ButtonFor(MidiAction.SwapAB));
+        s.SetPtt(knop);                            // PTT pakt hem terug
+        Assert.Empty(s.Buttons);
+
+        var copy = s.Clone();                      // kloon deelt de lijst niet
+        copy.SetButton(MidiAction.BandUp, new MidiControl(MidiKind.NoteOn, 1, 37));
+        Assert.Empty(s.Buttons);
+    }
+
+    [Theory]
+    [InlineData(14_200_000L, 1, "17")]
+    [InlineData(14_200_000L, -1, "30")]
+    [InlineData(1_840_000L, -1, "160")]     // onderste band: blijft
+    [InlineData(432_200_000L, 1, "70")]     // bovenste band: blijft
+    [InlineData(11_000_000L, 1, "20")]      // buiten band: eerstvolgende erboven
+    [InlineData(11_000_000L, -1, "30")]     // buiten band: eerstvolgende eronder
+    public void Volgende_band(long hz, int dir, string expected) =>
+        Assert.Equal(expected, MidiActions.NextBand(hz, dir).Name);
+
+    [Fact]
+    public void Knoppen_in_json()
+    {
+        var s = new MidiSettings();
+        s.SetButton(MidiAction.Band20, new MidiControl(MidiKind.ControlChange, 2, 20));
+        var json = System.Text.Json.JsonSerializer.Serialize(s);
+        Assert.Contains("\"Band20\"", json);
+        var back = System.Text.Json.JsonSerializer.Deserialize<MidiSettings>(json)!;
+        Assert.Equal(new MidiControl(MidiKind.ControlChange, 2, 20), back.ButtonFor(MidiAction.Band20));
+    }
 }
