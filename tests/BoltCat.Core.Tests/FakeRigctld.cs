@@ -32,6 +32,12 @@ internal sealed class FakeRigctld : IAsyncDisposable
 
     public int CacheMs = 1000;
 
+    /// <summary>Gedrag als FT-817/857/897: alleen TOGGLE, geen XCHG/CPY.</summary>
+    public bool ToggleOnly;
+
+    /// <summary>Kunstmatige vertraging per set_freq (trage radio).</summary>
+    public int SetFreqDelayMs;
+
     /// <summary>Foutcode voor get_freq (0 = OK), bijv. -5 = radio reageert niet.</summary>
     public volatile int FreqCode;
 
@@ -90,6 +96,7 @@ internal sealed class FakeRigctld : IAsyncDisposable
                     await writer.WriteAsync("get_split_vfo:\nSplit: 0\nTX VFO: None\nRPRT 0\n");
                     continue;
                 }
+                if (name == "set_freq" && SetFreqDelayMs > 0) await Task.Delay(SetFreqDelayMs);
                 await writer.WriteAsync(Respond(cmd));
             }
         }
@@ -134,6 +141,8 @@ internal sealed class FakeRigctld : IAsyncDisposable
                 Split = p[^2] != "0";
                 TxVfo = p[^1];
                 return Ok($"set_split_vfo: {p[^2]} {p[^1]}");
+            case "vfo_op" when ToggleOnly && p[^1] != "TOGGLE":
+                return "vfo_op:\nRPRT -11\n";
             case "vfo_op":
                 if (p[^1] == "XCHG") (FreqA, FreqB) = (FreqB, FreqA);
                 else if (p[^1] == "CPY") FreqB = FreqA;

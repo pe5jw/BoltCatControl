@@ -51,6 +51,57 @@ public static class Ui
     public static TextBlock MonoText(string text, double size, string colorKey = BoltTheme.Keys.Text) =>
         new TextBlock { Text = text, FontFamily = Mono, FontSize = size }
             .Themed(TextBlock.ForegroundProperty, colorKey);
+
+    /// <summary>Knop met async handler; fouten worden afgevangen (de app mag nooit crashen op een klik).</summary>
+    public static Button Button(string text, Func<Task> onClick, double minWidth = 0, bool small = false)
+    {
+        var b = new Button
+        {
+            Content = text,
+            MinWidth = minWidth,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            Padding = small ? new Thickness(8, 3) : new Thickness(12, 6),
+            FontSize = small ? 12 : 13,
+            FontWeight = FontWeight.SemiBold,
+            CornerRadius = Radius,
+            BorderThickness = new Thickness(1),
+        };
+        b.Click += async (_, _) =>
+        {
+            try { await onClick(); }
+            catch (Exception ex) { System.Diagnostics.Trace.WriteLine($"Knop '{text}': {ex}"); }
+        };
+        return b;
+    }
+
+    /// <summary>Actieve knop (huidige mode/band/stap) markeren met de accentkleur.</summary>
+    public static void SetActive(Button b, bool active)
+    {
+        if (active)
+        {
+            b.Themed(Avalonia.Controls.Button.BackgroundProperty, BoltTheme.Keys.AccentDim);
+            b.Themed(Avalonia.Controls.Button.BorderBrushProperty, BoltTheme.Keys.Accent);
+        }
+        else
+        {
+            b.ClearValue(Avalonia.Controls.Button.BackgroundProperty);
+            b.ClearValue(Avalonia.Controls.Button.BorderBrushProperty);
+        }
+    }
+
+    /// <summary>Eén regel: links uitgelijnde en rechts uitgelijnde elementen.</summary>
+    public static Control Row(Control[] left, Control[] right)
+    {
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto") };
+        var l = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 0, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var c in left) l.Children.Add(c);
+        var r = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var c in right) r.Children.Add(c);
+        Grid.SetColumn(r, 1);
+        grid.Children.Add(l);
+        grid.Children.Add(r);
+        return grid;
+    }
 }
 
 /// <summary>LED-indicator met label eronder; aan = gekleurd met gloed.</summary>

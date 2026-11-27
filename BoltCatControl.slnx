@@ -5,6 +5,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BoltCat.Core.Tests/BoltCat.Core.Tests.csproj" />
+    <Project Path="tests/BoltCatControl.UiTests/BoltCatControl.UiTests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/BoltCat.Test/BoltCat.Test.csproj" />
