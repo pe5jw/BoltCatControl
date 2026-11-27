@@ -65,7 +65,8 @@ public sealed class MainWindow : Window
     // Schaal: alles (tekst, knoppen, VFO) via één LayoutTransform
     private readonly LayoutTransformControl _scaleHost = new();
     private double _scale = 1.0;
-    private const double BaseWidth = 920, BaseHeight = 545, BaseMinWidth = 780, BaseMinHeight = 520;
+    /// <summary>Ontwerpmaat: op deze venstergrootte is de schaal 100 %.</summary>
+    private const double BaseWidth = 920, BaseHeight = 545;
 
     public MainWindow(RigController rig, AppSettings settings, bool autoStart)
     {
@@ -77,10 +78,11 @@ public sealed class MainWindow : Window
             ?.Split('+')[0] ?? "?";
 
         Title     = $"BoltCatControl {_version}";
-        Width     = BaseWidth;
-        Height    = BaseHeight;
-        MinWidth  = BaseMinWidth;
-        MinHeight = BaseMinHeight;
+        // Venster mag flink kleiner: de inhoud schaalt mee en blijft altijd helemaal in beeld
+        MinWidth  = BaseWidth * MinScale;
+        MinHeight = BaseHeight * MinScale;
+        Width     = Math.Max(MinWidth, _settings.WindowWidth ?? BaseWidth * _settings.UiScale);
+        Height    = Math.Max(MinHeight, _settings.WindowHeight ?? BaseHeight * _settings.UiScale);
         this.Themed(BackgroundProperty, BoltTheme.Keys.BgDeep);
 
         // ── Header ────────────────────────────────────────────────────────
@@ -297,7 +299,8 @@ public sealed class MainWindow : Window
         Add(status, 5, 10);
         _scaleHost.Child = root;
         Content = _scaleHost;
-        SetScale(_settings.UiScale, resizeWindow: true);
+        FitToSize(Width, Height);
+        SizeChanged += (_, e) => FitToSize(e.NewSize.Width, e.NewSize.Height);
 
         // ── Koppeling met de radio ────────────────────────────────────────
         _rig.StateChanged += s => Dispatcher.UIThread.Post(() => ApplyState(s));
@@ -359,7 +362,7 @@ public sealed class MainWindow : Window
     {
         var dialog = new SettingsWindow(_settings);
         var saved = await dialog.ShowDialog<bool>(this);
-        if (Math.Abs(_settings.UiScale - _scale) > 0.001) SetScale(_settings.UiScale, resizeWindow: true);
+        if (Math.Abs(_settings.UiScale - _scale) > 0.02) SetScale(_settings.UiScale, resizeWindow: true);
         if (saved)
         {
             _settings.Save();
@@ -389,36 +392,50 @@ public sealed class MainWindow : Window
 
     // ── Toetsenbord ───────────────────────────────────────────────────────
 
-    public const double ScaleStep = 0.1, MinScale = 0.6, MaxScale = 2.5;
+    public const double ScaleStep = 0.1, MinScale = 0.4, MaxScale = 3.0;
 
     /// <summary>
-    /// Hele interface schalen (tekst, knoppen, VFO, meter). Het venster groeit/krimpt mee,
-    /// maar nooit groter dan het scherm.
+    /// Schaal volgt de venstergrootte: de inhoud wordt zo groot dat hij precies past.
+    /// In de andere richting rekt de layout op (breder venster = bredere panelen),
+    /// zodat er nooit iets wordt afgeknipt of naar een tweede regel verschuift.
+    /// </summary>
+    private void FitToSize(double width, double height)
+    {
+        if (width <= 0 || height <= 0 || double.IsNaN(width) || double.IsNaN(height)) return;
+        var scale = Math.Clamp(Math.Min(width / BaseWidth, height / BaseHeight), MinScale, MaxScale);
+        _scale = scale;
+        _scaleHost.LayoutTransform = new ScaleTransform(scale, scale);
+        _settings.UiScale = Math.Round(scale, 2);
+        _settings.WindowWidth = Math.Round(width);
+        _settings.WindowHeight = Math.Round(height);
+    }
+
+    /// <summary>
+    /// Schaal instellen (Ctrl +/−/0, Ctrl + scrollwiel, instellingen): het venster wordt
+    /// naar verhouding groter/kleiner, nooit groter dan het scherm.
     /// </summary>
     public void SetScale(double scale, bool resizeWindow)
     {
         scale = Math.Round(Math.Clamp(scale, MinScale, MaxScale), 2);
         var factor = scale / _scale;
-        _scale = scale;
-        _settings.UiScale = scale;
-        _scaleHost.LayoutTransform = new ScaleTransform(scale, scale);
-
-        MinWidth = BaseMinWidth * scale;
-        MinHeight = BaseMinHeight * scale;
+        double w = (double.IsNaN(Width) ? BaseWidth : Width) * factor;
+        double h = (double.IsNaN(Height) ? BaseHeight : Height) * factor;
+        if (Screens?.ScreenFromWindow(this) is { } screen)
+        {
+            var area = screen.WorkingArea.Size.ToSize(screen.Scaling);
+            var fit = Math.Min(1.0, Math.Min(area.Width / w, area.Height / h)); // past op het scherm
+            w *= fit;
+            h *= fit;
+        }
+        w = Math.Max(MinWidth, w);
+        h = Math.Max(MinHeight, h);
         if (resizeWindow)
         {
-            double w = Math.Max(MinWidth, (double.IsNaN(Width) ? BaseWidth : Width) * factor);
-            double h = Math.Max(MinHeight, (double.IsNaN(Height) ? BaseHeight : Height) * factor);
-            if (Screens?.ScreenFromWindow(this) is { } screen)
-            {
-                var area = screen.WorkingArea.Size.ToSize(screen.Scaling);
-                w = Math.Min(w, area.Width);
-                h = Math.Min(h, area.Height);
-            }
             Width = w;
             Height = h;
         }
-        if (IsVisible) ShowNotice($"Schaal {scale:P0}");
+        FitToSize(w, h);
+        if (IsVisible) ShowNotice($"Schaal {_scale:P0}");
     }
 
     private void OnKeyDown(object? sender, KeyEventArgs e)
