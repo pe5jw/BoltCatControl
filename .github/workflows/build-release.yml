@@ -27,6 +27,13 @@ jobs:
             rid: win-x64
           - os: ubuntu-latest
             rid: linux-x64
+          # Raspberry Pi 3/4/5 met Pi OS 64-bit: gebouwd én getest op een echte ARM64 machine
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+          # Raspberry Pi 3/4 met Pi OS 32-bit: alleen bouwen (geen ARM32 runner voor de tests)
+          - os: ubuntu-latest
+            rid: linux-arm
+            skip-tests: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +85,7 @@ jobs:
 
       # Linux: rigctld van het systeem (alleen voor de integratietests)
       - name: Hamlib installeren (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && !matrix.skip-tests
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libhamlib-utils
@@ -88,6 +95,7 @@ jobs:
         run: dotnet build BoltCatControl.slnx -c Release
 
       - name: Tests
+        if: ${{ !matrix.skip-tests }}
         env:
           BOLTCAT_REQUIRE_RIGCTLD: "1"   # integratietest met echte rigctld is verplicht in CI
           BOLTCAT_SCREENSHOT_DIR: ${{ github.workspace }}/screenshots
@@ -176,14 +184,13 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: '*-x64'
           merge-multiple: true
 
       - name: Vaste namen (zonder versie)
         run: |
           for f in BoltCat*.zip; do
             # BoltCatControl-0.1.0-ci.42-linux-x64.zip -> BoltCatControl-linux-x64.zip
-            name=$(echo "$f" | sed -E 's/^(BoltCatControl|BoltCat\.Test)-.*-(win-x64|linux-x64)\.zip$/\1-\2.zip/')
+            name=$(echo "$f" | sed -E 's/^(BoltCatControl|BoltCat\.Test)-.*-(win-x64|linux-x64|linux-arm64|linux-arm)\.zip$/\1-\2.zip/')
             [ "$f" != "$name" ] && mv "$f" "$name"
           done
           ls -la *.zip
