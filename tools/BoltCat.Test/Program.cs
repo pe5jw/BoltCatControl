@@ -119,7 +119,7 @@ RigctldProcess? rigctld = null;
 if (rig is not null)
 {
     var extraArgs = new List<string>();
-    foreach (var c in confs) { extraArgs.Add("-C"); extraArgs.Add(c); }
+    foreach (var conf in confs) { extraArgs.Add("-C"); extraArgs.Add(conf); }
     if (debug) extraArgs.Add("-vvvvv");
 
     rigctld = new RigctldProcess(new RigctldOptions
