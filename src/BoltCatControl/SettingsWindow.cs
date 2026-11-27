@@ -37,6 +37,7 @@ public sealed class SettingsWindow : Window
     private readonly TextBlock _modelsStatus;
     private readonly ComboBox _port;
     private readonly TabControl _tabs;
+    private readonly Button _installHamlib;
     private readonly Dictionary<MidiAction, TextBlock> _buttonTexts = [];
     private TextBlock _buttonsLearnText = null!, _buttonsLastMsg = null!;
     private readonly ComboBox _baud;
@@ -92,7 +93,10 @@ public sealed class SettingsWindow : Window
             .Themed(ListBox.BackgroundProperty, BoltTheme.Keys.BgInput)
             .Themed(ListBox.BorderBrushProperty, BoltTheme.Keys.Border);
         _selectedText = Ui.MonoText(settings.RigModel > 0 ? $"{settings.RigModel}  {settings.RigName}" : "nog geen radio gekozen", 13, BoltTheme.Keys.Accent);
-        _modelsStatus = new TextBlock { FontSize = 11 }.Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.TextDim);
+        _modelsStatus = new SelectableTextBlock { FontSize = 11, TextWrapping = TextWrapping.Wrap }.Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.TextDim);
+        _installHamlib = Ui.Button("Hamlib installeren", InstallHamlibAsync, small: true);
+        _installHamlib.IsVisible = false;
+        Ui.SetActive(_installHamlib, true);
 
         _search.TextChanged += (_, _) => Filter();
         _results.SelectionChanged += (_, _) =>
@@ -109,7 +113,7 @@ public sealed class SettingsWindow : Window
         var radio = Ui.Panel(new StackPanel
         {
             Spacing = 6,
-            Children = { Ui.SectionLabel("Radio"), _search, _results, _modelsStatus, Labeled("Gekozen", _selectedText) },
+            Children = { Ui.SectionLabel("Radio"), _search, _results, _modelsStatus, _installHamlib, Labeled("Gekozen", _selectedText) },
         });
 
         // ── Verbinding ────────────────────────────────────────────────────
@@ -453,11 +457,14 @@ public sealed class SettingsWindow : Window
         var exe = RigctldProcess.FindExecutable(_settings.RigctldPath);
         if (exe is null)
         {
+            var cmd = SystemSetup.HamlibInstallCommand();
             _modelsStatus.Text = OperatingSystem.IsWindows()
                 ? "rigctld niet gevonden (map 'hamlib' naast BoltCatControl ontbreekt)"
-                : "rigctld niet gevonden — installeer Hamlib: sudo apt install libhamlib-utils";
+                : $"rigctld (Hamlib) ontbreekt op dit systeem.{(cmd is null ? "" : $" Klik op Hamlib installeren, of voer zelf uit: {cmd.ShellText}")}";
+            _installHamlib.IsVisible = OperatingSystem.IsLinux() && cmd is not null;
             return;
         }
+        _installHamlib.IsVisible = false;
         _modelsStatus.Text = "Radio's laden…";
         try
         {
@@ -471,6 +478,17 @@ public sealed class SettingsWindow : Window
         {
             _modelsStatus.Text = $"Kon de radiolijst niet laden: {ex.Message}";
         }
+    }
+
+    private async Task InstallHamlibAsync()
+    {
+        _installHamlib.IsEnabled = false;
+        var result = await SystemSetup.InstallHamlibAsync(line => Dispatcher.UIThread.Post(() => _modelsStatus.Text = $"Installeren… {line}"));
+        _installHamlib.IsEnabled = true;
+        if (result.Success)
+            await LoadModelsCoreAsync();
+        else
+            _modelsStatus.Text = result.ManualCommand is { } c ? $"{result.Message} {c}" : result.Message;
     }
 
     private void Filter()

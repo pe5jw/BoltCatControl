@@ -100,7 +100,9 @@ wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatCon
 wget https://github.com/pe5jw/BoltCatControl/releases/download/latest/BoltCatControl-win-x64.zip
 ```
 
-Linux: `sudo apt install libhamlib-utils` voor rigctld. Windows: Hamlib zit erbij.
+Linux: ontbreekt rigctld, dan biedt BoltCatControl zelf aan om Hamlib te installeren
+(apt, dnf, pacman, zypper; wachtwoord via het systeemvenster of een terminal), en ook om je
+gebruiker toegang te geven tot de seriële poort (groep `dialout`). Windows: Hamlib zit erbij.
 
 ## Releases
 

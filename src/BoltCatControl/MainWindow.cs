@@ -44,6 +44,14 @@ public sealed class MainWindow : Window
     private readonly Border _banner;
     private readonly TextBlock _bannerText;
 
+    // Systeemcontrole (Linux): Hamlib ontbreekt / geen toegang tot de seriële poort
+    private readonly Border _setupBanner;
+    private readonly SelectableTextBlock _setupText;
+    private readonly Button _setupAction;
+    private readonly Button _setupCopy;
+    private Func<Task>? _setupHandler;
+    private string? _setupCommand;
+
     private readonly FrequencyDisplay _vfoA = new(56);
     private readonly TextBlock _modeText;
     private readonly Border _splitBadge;
@@ -138,6 +146,35 @@ public sealed class MainWindow : Window
             Child = _bannerText,
             IsVisible = false,
         }.Themed(Border.BorderBrushProperty, BoltTheme.Keys.Tx);
+
+        // ── Systeemcontrole (Linux) ───────────────────────────────────────
+        _setupText = new SelectableTextBlock { FontSize = 12, TextWrapping = TextWrapping.Wrap, VerticalAlignment = VerticalAlignment.Center }
+            .Themed(TextBlock.ForegroundProperty, BoltTheme.Keys.Text);
+        _setupAction = Ui.Button("Installeren", async () => { if (_setupHandler is not null) await _setupHandler(); }, minWidth: 140);
+        Ui.SetActive(_setupAction, true);
+        _setupCopy = Ui.Button("Kopieer opdracht", async () =>
+        {
+            if (_setupCommand is not null && Clipboard is { } cb) await cb.SetTextAsync(_setupCommand);
+            ShowNotice("Opdracht gekopieerd — plak hem in een terminal");
+        }, minWidth: 140);
+        _setupCopy.IsVisible = false;
+        var setupGrid = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto,Auto") };
+        _setupAction.Margin = new Thickness(12, 0, 0, 0);
+        _setupCopy.Margin = new Thickness(8, 0, 0, 0);
+        Grid.SetColumn(_setupAction, 1);
+        Grid.SetColumn(_setupCopy, 2);
+        setupGrid.Children.Add(_setupText);
+        setupGrid.Children.Add(_setupAction);
+        setupGrid.Children.Add(_setupCopy);
+        _setupBanner = new Border
+        {
+            BorderThickness = new Thickness(1),
+            CornerRadius = Ui.Radius,
+            Padding = new Thickness(12, 8),
+            Child = setupGrid,
+            IsVisible = false,
+        }.Themed(Border.BackgroundProperty, BoltTheme.Keys.BgPanel)
+         .Themed(Border.BorderBrushProperty, BoltTheme.Keys.Accent);
 
         // ── VFO paneel ────────────────────────────────────────────────────
         _vfoA.TuneBy += delta => _rig.TuneBy(delta);
@@ -292,12 +329,15 @@ public sealed class MainWindow : Window
         };
         void Add(Control c, int row, double top)
         {
+            if (c is StackPanel { Children.Count: > 0 } sp && sp.Children.All(x => !x.IsVisible))
+                c.IsVisible = false; // wordt zichtbaar zodra een banner verschijnt (zie UpdateBannerRow)
             c.Margin = new Thickness(c.Margin.Left, top, c.Margin.Right, c.Margin.Bottom);
             Grid.SetRow(c, row);
             root.Children.Add(c);
         }
         Add(header, 0, 0);
-        Add(_banner, 1, 10);
+        var banners = new StackPanel { Spacing = 8, Children = { _setupBanner, _banner } };
+        Add(banners, 1, 10);
         Add(mainRow, 2, 10);
         Add(controls, 3, 10);
         Add(bands, 4, 10);
@@ -349,10 +389,111 @@ public sealed class MainWindow : Window
     private async Task OnOpenedAsync()
     {
         if (!_autoStart) return;
+        // Linux: eerst Hamlib en poorttoegang controleren
+        if (!CheckSystem()) return;
+        await ContinueStartupAsync();
+    }
+
+    private async Task ContinueStartupAsync()
+    {
         if (!_settings.IsConfigured)
             await OpenSettingsAsync();
         else if (_settings.AutoConnect)
             await ConnectAsync();
+    }
+
+    // ── Systeemcontrole (Linux) ───────────────────────────────────────────
+
+    /// <summary>
+    /// Controleert of rigctld er is en of de seriële poort bruikbaar is. Toont anders een
+    /// balk met een knop om het te regelen. Geeft true als alles in orde is.
+    /// </summary>
+    public bool CheckSystem()
+    {
+        if (!OperatingSystem.IsLinux()) { HideSetup(); return true; }
+
+        if (!SystemSetup.RigctldAvailable(_settings.RigctldPath))
+        {
+            var cmd = SystemSetup.HamlibInstallCommand();
+            ShowSetup("Hamlib (rigctld) ontbreekt op dit systeem. BoltCatControl heeft het nodig om met de radio te praten.",
+                "Hamlib installeren", InstallHamlibAsync, cmd?.ShellText);
+            return false;
+        }
+
+        if (_settings.RigModel != 1 && SystemSetup.SerialPortAccessible(_settings.SerialPort) == false)
+        {
+            ShowSetup($"Geen toegang tot {_settings.SerialPort}. Je gebruiker moet in de groep 'dialout'.",
+                "Toegang regelen", FixSerialAccessAsync, $"sudo usermod -aG dialout {Environment.UserName}");
+            return true; // verbinden mag geprobeerd worden; de balk legt uit waarom het faalt
+        }
+
+        HideSetup();
+        return true;
+    }
+
+    /// <summary>Balk tonen (ook gebruikt door de screenshot-test).</summary>
+    public void ShowSetup(string text, string actionLabel, Func<Task> action, string? command)
+    {
+        _setupText.Text = text;
+        _setupAction.Content = actionLabel;
+        _setupAction.IsEnabled = true;
+        _setupAction.IsVisible = true;
+        _setupHandler = action;
+        _setupCommand = command;
+        _setupCopy.IsVisible = false;
+        _setupBanner.IsVisible = true;
+        UpdateBannerRow();
+    }
+
+    private void HideSetup()
+    {
+        _setupBanner.IsVisible = false;
+        UpdateBannerRow();
+    }
+
+    private void UpdateBannerRow()
+    {
+        if (_setupBanner.Parent is Control row) row.IsVisible = _setupBanner.IsVisible || _banner.IsVisible;
+    }
+
+    private async Task InstallHamlibAsync()
+    {
+        _setupAction.IsEnabled = false;
+        _setupText.Text = "Hamlib installeren…";
+        var result = await SystemSetup.InstallHamlibAsync(line => Dispatcher.UIThread.Post(() => _setupText.Text = $"Hamlib installeren… {line}"));
+        await ShowSetupResultAsync(result, onSuccess: async () =>
+        {
+            ShowNotice("Hamlib geïnstalleerd");
+            if (CheckSystem()) await ContinueStartupAsync();
+        });
+    }
+
+    private async Task FixSerialAccessAsync()
+    {
+        _setupAction.IsEnabled = false;
+        _setupText.Text = "Toegang regelen…";
+        var result = await SystemSetup.FixSerialAccessAsync();
+        await ShowSetupResultAsync(result, onSuccess: () =>
+        {
+            // Groepslidmaatschap geldt pas na opnieuw inloggen: balk laten staan met uitleg
+            _setupText.Text = result.Message;
+            _setupAction.IsVisible = false;
+            return Task.CompletedTask;
+        });
+    }
+
+    private async Task ShowSetupResultAsync(SystemSetup.Result result, Func<Task> onSuccess)
+    {
+        if (result.Success)
+        {
+            await onSuccess();
+            return;
+        }
+        _setupText.Text = result.ManualCommand is { } cmd ? $"{result.Message}\n{cmd}" : result.Message;
+        _setupCommand = result.ManualCommand ?? _setupCommand;
+        _setupCopy.IsVisible = _setupCommand is not null;
+        _setupAction.IsEnabled = true;
+        _setupAction.Content = "Opnieuw proberen";
     }
 
     private async void OnClosing(object? sender, WindowClosingEventArgs e)
@@ -393,6 +534,7 @@ public sealed class MainWindow : Window
         if (saved)
         {
             _settings.Save();
+            CheckSystem();
             await ConnectAsync();
         }
     }
@@ -551,6 +693,7 @@ public sealed class MainWindow : Window
         // Banner
         var error = s.Error is { Length: > 0 } e && e != "Verbinden…" ? e : null;
         _banner.IsVisible = error is not null;
+        UpdateBannerRow();
         _bannerText.Text = error is null ? "" : connected ? $"⚠  {error}" : $"✕  {error}";
 
         // VFO A
