@@ -131,6 +131,28 @@ public class ScreenshotTests
     }
 
     [AvaloniaFact]
+    public void Klein_venster_alles_in_beeld()
+    {
+        var settings = Ft897();
+        settings.WindowWidth = 520;   // veel smaller dan de ontwerpmaat
+        settings.WindowHeight = 330;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 14_074_000, Mode = "USB", StrengthDb = -6 });
+        Capture(w, "9-klein-venster-520");
+        w.Close();
+    }
+
+    [AvaloniaFact]
+    public void Breed_laag_venster()
+    {
+        var settings = Ft897();
+        settings.WindowWidth = 1400;
+        settings.WindowHeight = 500;
+        var w = Open(settings, new RigState { Connected = true, FrequencyA = 7_074_000, Mode = "LSB", StrengthDb = -18 });
+        Capture(w, "10-breed-laag");
+        w.Close();
+    }
+
+    [AvaloniaFact]
     public void Instellingen()
     {
         var settings = Ft897();

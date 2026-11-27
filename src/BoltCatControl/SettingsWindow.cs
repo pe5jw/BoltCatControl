@@ -42,7 +42,7 @@ public sealed class SettingsWindow : Window
     private readonly CheckBox _vfoMode;
     private readonly CheckBox _autoConnect;
     private readonly ComboBox _scale;
-    private static readonly double[] Scales = [0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
+    private static readonly double[] Scales = [0.5, 0.6, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0];
     private readonly TextBlock _error;
     private readonly TaskCompletionSource _modelsLoaded = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -141,6 +141,7 @@ public sealed class SettingsWindow : Window
 
         // ── Weergave ──────────────────────────────────────────────────────
         _scale = new ComboBox { MinWidth = 120, ItemsSource = Scales.Select(x => $"{x:P0}").ToList() };
+        // Schaal volgt de venstergrootte en kan dus "krom" zijn (bijv. 87 %): dichtstbijzijnde tonen
         _scale.SelectedIndex = Array.IndexOf(Scales, Scales.OrderBy(x => Math.Abs(x - settings.UiScale)).First());
         _scale.SelectionChanged += (_, _) =>
         {
@@ -153,7 +154,7 @@ public sealed class SettingsWindow : Window
             {
                 Ui.SectionLabel("Weergave"),
                 Labeled("Schaal", _scale),
-                Hint("Ook in het hoofdvenster: Ctrl + / Ctrl − / Ctrl 0, of Ctrl + scrollwiel."),
+                Hint("Of sleep het venster groter/kleiner: alles schaalt mee. Ook Ctrl + / Ctrl − / Ctrl 0 of Ctrl + scrollwiel."),
             },
         });
 

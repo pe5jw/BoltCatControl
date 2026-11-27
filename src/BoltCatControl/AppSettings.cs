@@ -31,6 +31,10 @@ public sealed class AppSettings
 
     /// <summary>Schaal van de hele interface (1.0 = 100 %). Ctrl +/− /0 of Ctrl + scrollwiel.</summary>
     public double UiScale { get; set; } = 1.0;
+
+    /// <summary>Laatste venstergrootte (de schaal volgt daaruit).</summary>
+    public double? WindowWidth { get; set; }
+    public double? WindowHeight { get; set; }
     public int StepHz { get; set; } = 100;
 
     /// <summary>MIDI controller: apparaat, VFO encoder, PTT knop.</summary>
