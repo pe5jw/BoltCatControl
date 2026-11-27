@@ -59,6 +59,7 @@ internal sealed class FakeRigctld : IAsyncDisposable
             while (!_cts.IsCancellationRequested)
             {
                 var c = await _listener.AcceptTcpClientAsync(_cts.Token);
+                c.NoDelay = true;
                 lock (_clients) _clients.Add(c);
                 _ = Task.Run(() => Serve(c));
             }

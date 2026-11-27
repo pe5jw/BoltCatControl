@@ -105,13 +105,17 @@ public class RigPollerTests
         await using var poller = NewPoller(client);
         poller.Start();
         await WaitFor(poller, s => s.Connected && s.StrengthDb == -12);
-        await Task.Delay(400);
+
+        // Wachten op genoeg rondes (niet op een vaste tijd: CI runners zijn soms traag)
+        var deadline = DateTime.UtcNow + Wait;
+        while (fake.Received.Count(l => l.Contains("get_freq")) < 10 && DateTime.UtcNow < deadline)
+            await Task.Delay(20);
         await poller.StopAsync();
 
         int freq  = fake.Received.Count(l => l.Contains("get_freq"));
         int ptt   = fake.Received.Count(l => l.Contains("get_ptt"));
         int meter = fake.Received.Count(l => l.Contains("get_level"));
-        Assert.True(freq >= 4, $"freq={freq}");
+        Assert.True(freq >= 10, $"freq={freq}");
         Assert.InRange(ptt, freq / 2 - 1, freq / 2 + 2);
         Assert.InRange(meter, freq / 2 - 1, freq / 2 + 1);
 
